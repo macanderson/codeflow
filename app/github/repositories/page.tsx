@@ -74,10 +74,10 @@ function RepositorySelectionContent() {
 
   const handleImportRepository = async (repo: GitHubRepo) => {
     setImporting(repo.id.toString())
-    
+
     try {
       const accessToken = localStorage.getItem('github_access_token')
-      
+
       if (!accessToken) {
         console.error('No GitHub access token found')
         return
@@ -94,18 +94,18 @@ function RepositorySelectionContent() {
           repo_url: repo.html_url,
           branch: repo.default_branch,
           project_name: repo.name,
-          user_id: user?.id || 'anonymous',
+          user_id: user?.name || 'anonymous',
           template: 'base',
         }),
       })
 
       const data = await response.json()
-      
+
       if (data.success) {
         // Store project data
         localStorage.setItem('current_project', JSON.stringify(data.project))
         localStorage.setItem('current_sandbox', JSON.stringify(data.sandbox))
-        
+
         // Redirect to project workspace
         router.push(`/project/${data.project.id}`)
       } else {
@@ -153,7 +153,7 @@ function RepositorySelectionContent() {
               Back to Home
             </Button>
           </div>
-          
+
           <div className="flex items-center gap-3 mb-4">
             <img src={user?.avatar_url || "/placeholder.svg"} alt={user?.name} className="h-12 w-12 rounded-full" />
             <div>
@@ -230,8 +230,8 @@ function RepositorySelectionContent() {
                             <ExternalLink className="h-4 w-4" />
                           </a>
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           onClick={() => handleImportRepository(repo)}
                           disabled={importing === repo.id.toString()}
                         >

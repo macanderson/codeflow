@@ -55,7 +55,6 @@ OPENAI_API_KEY=your_openai_api_key_here
 E2B_API_KEY=your_e2b_api_key_here
 
 # Optional: GitHub integration
-GITHUB_PAT=your_github_personal_access_token
 GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
 GITHUB_REDIRECT_URI=http://localhost:3000/api/github/auth
@@ -70,6 +69,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 #### Getting API Keys
 
 **OpenAI API Key:**
+
 1. Go to [OpenAI Platform](https://platform.openai.com/)
 2. Sign in or create an account
 3. Navigate to the [API Keys section](https://platform.openai.com/api-keys)
@@ -78,6 +78,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 6. Copy the generated key and add it to your `.env` file as `OPENAI_API_KEY`
 
 **E2B API Key:**
+
 1. Go to [e2b.dev](https://e2b.dev/)
 2. Sign up or sign in to your account
 3. Navigate to your [dashboard](https://e2b.dev/dashboard)

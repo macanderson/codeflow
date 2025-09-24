@@ -24,6 +24,9 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import rehypeSanitize from "rehype-sanitize"
 
 interface Message {
   id: string
@@ -376,13 +379,30 @@ function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
         <div className={cn("max-w-[80%]", isUser && "text-right")}>
           <div
             className={cn(
-              "rounded-lg p-3 text-sm",
+              "rounded-lg p-3 text-sm prose prose-invert max-w-none",
               isUser
                 ? "bg-primary text-primary-foreground ml-auto"
                 : "bg-muted text-muted-foreground border border-border",
             )}
           >
-            {message.content}
+            {isUser ? (
+              message.content
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeSanitize]}
+                components={{
+                  a: ({ node, ...props }) => (
+                    <a {...props} target="_blank" rel="noopener noreferrer" />
+                  ),
+                  code: ({ inline, className, children, ...props }) => (
+                    <code className={cn(className)} {...props}>{children}</code>
+                  ),
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            )}
           </div>
 
           {/* Attachments */}

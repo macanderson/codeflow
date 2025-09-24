@@ -15,11 +15,31 @@ export function getLLM(model: string) {
                 });
                 return { text: r.choices[0].message?.content ?? "" };
             },
-            async jsonToolCall(msgs: Msg[], _schema?: any) {
+            async jsonToolCall(msgs: Msg[], schema?: any) {
+                // Prepend an instruction requiring a JSON object response to
+                // satisfy OpenAI's json_object response_format requirement.
+                const jsonGuard: Msg = {
+                    role: "system",
+                    content:
+                        "Respond with a single JSON object only. Use keys 'tool' and 'args'. Do not include any text outside of JSON.",
+                };
+
+                const toolSchemaText = schema
+                    ? `Available tools and argument shapes (JSON): ${JSON.stringify(
+                          schema
+                      )}. Rules: Always choose one listed tool. Use only non-interactive commands. Use 'pnpm' for packages. Never open editors like 'nano' or 'vim'.`
+                    : undefined;
+
+                const toolSchemaMsg: Msg | null = toolSchemaText
+                    ? { role: "system", content: toolSchemaText }
+                    : null;
+
                 const r = await client.chat.completions.create({
                     model: name,
                     temperature: 0,
-                    messages: msgs,
+                    messages: toolSchemaMsg
+                        ? [jsonGuard, toolSchemaMsg, ...msgs]
+                        : [jsonGuard, ...msgs],
                     response_format: { type: "json_object" }
                 });
                 const content = r.choices[0].message?.content ?? "{}";

@@ -36,6 +36,11 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import * as prismThemes from "react-syntax-highlighter/dist/esm/styles/prism"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import rehypeSanitize from "rehype-sanitize"
 
 const READ_ONLY = true
 
@@ -358,41 +363,6 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium">Files</h3>
-            <div className="flex items-center gap-1">
-              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DialogTrigger asChild>
-                      <DropdownMenuItem onClick={() => setCreateType("file")}>
-                        <FilePlus className="h-4 w-4 mr-2" />
-                        New File
-                      </DropdownMenuItem>
-                    </DialogTrigger>
-                    <DialogTrigger asChild>
-                      <DropdownMenuItem onClick={() => setCreateType("folder")}>
-                        <FolderPlus className="h-4 w-4 mr-2" />
-                        New Folder
-                      </DropdownMenuItem>
-                    </DialogTrigger>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <CreateItemDialog
-                  type={createType}
-                  onCreateItem={handleCreateItem}
-                  onClose={() => setShowCreateDialog(false)}
-                />
-              </Dialog>
-
-              <Button variant="ghost" size="sm">
-                <Upload className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
 
           <div className="relative">
@@ -795,16 +765,62 @@ function FileEditor({ file, onSave }: FileEditorProps) {
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 p-4">
-        <Textarea
-          value={content}
-          onChange={() => {}}
-          onKeyDown={() => {}}
-          readOnly
-          className="w-full h-full font-mono text-sm resize-none border-0 focus-visible:ring-0 bg-transparent"
-          placeholder="File preview"
-        />
+      {/* Read-only Preview with syntax highlighting / markdown rendering */}
+      <div className="flex-1 p-0 overflow-auto">
+        {file.language === 'markdown' ? (
+          <div className="prose prose-invert max-w-none px-4 py-3">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeSanitize]}
+              components={{
+                code({ className, children, ...props }) {
+                  const match = /language-(\w+)/.exec(className || '')
+                  const content = String(children)
+                  if (className && className.includes('language-')) {
+                    return (
+                      <SyntaxHighlighter
+                        language={match?.[1] || 'text'}
+                        style={(prismThemes as any).oneDark}
+                        customStyle={{ margin: 0, borderRadius: 6, fontSize: '0.875rem' }}
+                        wrapLongLines
+                        {...props}
+                      >
+                        {content.replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    )
+                  }
+                  return (
+                    <code className={className} {...props}>
+                      {children as any}
+                    </code>
+                  )
+                },
+                a: ({ node, ...props }) => (
+                  <a {...props} target="_blank" rel="noopener noreferrer" />
+                ),
+              }}
+            >
+              {content || ''}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <SyntaxHighlighter
+            language={file.language || 'text'}
+            style={(prismThemes as any).oneDark}
+            customStyle={{
+              margin: 0,
+              borderRadius: 0,
+              background: 'transparent',
+              fontSize: '0.875rem',
+              padding: '1rem',
+            }}
+            codeTagProps={{ style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' } }}
+            showLineNumbers
+            wrapLongLines
+          >
+            {content ?? ''}
+          </SyntaxHighlighter>
+        )}
       </div>
 
       {/* Status Bar */}
