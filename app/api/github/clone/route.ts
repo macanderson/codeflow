@@ -3,18 +3,18 @@ import { Sandbox } from '@e2b/code-interpreter'
 
 export async function POST(request: NextRequest) {
   try {
-    const { 
-      access_token, 
-      repo_url, 
-      branch = 'main', 
-      project_name, 
+    const {
+      access_token,
+      repo_url,
+      branch = 'main',
+      project_name,
       user_id,
-      template = 'base' 
+      template = 'base'
     } = await request.json()
 
     if (!access_token || !repo_url || !project_name || !user_id) {
-      return NextResponse.json({ 
-        error: "Access token, repository URL, project name, and user ID are required" 
+      return NextResponse.json({
+        error: "Access token, repository URL, project name, and user ID are required"
       }, { status: 400 })
     }
 
@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     // Extract owner and repo name from URL
     const urlMatch = repo_url.match(/github\.com\/([^\/]+)\/([^\/]+)/)
     if (!urlMatch) {
-      return NextResponse.json({ 
-        error: "Invalid GitHub repository URL" 
+      return NextResponse.json({
+        error: "Invalid GitHub repository URL"
       }, { status: 400 })
     }
 
@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
 
     if (!repoResponse.ok) {
       const errorData = await repoResponse.json()
-      return NextResponse.json({ 
-        error: errorData.message || "Repository not found or access denied" 
+      return NextResponse.json({
+        error: errorData.message || "Repository not found or access denied"
       }, { status: repoResponse.status })
     }
 
@@ -59,6 +59,11 @@ export async function POST(request: NextRequest) {
     const sessionId = sbx.id
     console.log("[GitHub Clone] E2B sandbox created:", sessionId)
 
+    // Choose correct clone URL (use token for private repos)
+    const cloneUrl = repoData.private
+      ? `https://x-access-token:${access_token}@github.com/${owner}/${repo}.git`
+      : repoData.clone_url
+
     // Clone the repository
     const cloneResult = await sbx.runCode(`
 import subprocess
@@ -67,20 +72,20 @@ import json
 
 # Clone the repository
 result = subprocess.run([
-    'git', 'clone', 
+    'git', 'clone',
     '--branch', '${branch}',
-    '${repoData.clone_url}', 
+    '${'"' + '${cloneUrl}'.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'}',
     'workspace'
 ], capture_output=True, text=True, cwd='/home/user')
 
 if result.returncode == 0:
     print("Repository cloned successfully")
-    
+
     # List contents
     contents = subprocess.run(['ls', '-la', 'workspace'], capture_output=True, text=True, cwd='/home/user')
     print("Repository contents:")
     print(contents.stdout)
-    
+
     # Check for package.json and install dependencies
     if os.path.exists('/home/user/workspace/package.json'):
         print("Found package.json, installing dependencies...")
@@ -90,7 +95,7 @@ if result.returncode == 0:
         else:
             print("Failed to install dependencies:")
             print(install_result.stderr)
-    
+
     # Check for requirements.txt and install Python dependencies
     elif os.path.exists('/home/user/workspace/requirements.txt'):
         print("Found requirements.txt, installing Python dependencies...")
@@ -100,7 +105,7 @@ if result.returncode == 0:
         else:
             print("Failed to install Python dependencies:")
             print(install_result.stderr)
-    
+
     # Get project structure
     def get_file_tree(path, prefix=""):
         tree = []
@@ -115,12 +120,12 @@ if result.returncode == 0:
         except PermissionError:
             pass
         return tree
-    
+
     project_tree = get_file_tree('/home/user/workspace')
     print("Project structure:")
     for item in project_tree[:20]:  # Limit to first 20 items
         print(item)
-    
+
 else:
     print("Failed to clone repository:")
     print(result.stderr)
@@ -173,9 +178,9 @@ else:
     })
   } catch (error) {
     console.error("[GitHub Clone] Failed to clone repository:", error)
-    return NextResponse.json({ 
-      error: "Failed to clone repository", 
-      details: error instanceof Error ? error.message : "Unknown error" 
+    return NextResponse.json({
+      error: "Failed to clone repository",
+      details: error instanceof Error ? error.message : "Unknown error"
     }, { status: 500 })
   }
 }
@@ -194,6 +199,6 @@ function detectFramework(language: string): string {
     'C++': 'cpp',
     'C': 'c',
   }
-  
+
   return frameworkMap[language] || 'nextjs'
 }
