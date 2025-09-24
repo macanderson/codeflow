@@ -28,35 +28,48 @@ print('Workspace ready: ${WORKSPACE_DIR}')
     async run(cmd: string, opts?: { cwd?: string }) {
       const cwd = opts?.cwd ?? WORKSPACE_DIR
       const py = `
-import subprocess, sys, os
+import subprocess, os
 result = subprocess.run(${JSON.stringify(cmd)}, shell=True, cwd=${JSON.stringify(cwd)}, capture_output=True, text=True)
-print(result.stdout, end='')
+if result.stdout:
+    print(result.stdout, end='')
 if result.stderr:
-    print(result.stderr, end='', file=sys.stderr)
-sys.exit(result.returncode)
+    print(result.stderr, end='')
+print("\n__EXIT_CODE__=%d" % result.returncode)
       `
       const res = await sbx.runCode(py)
-      const stdout = (res.logs?.stdout ?? []).join('\n')
-      const stderr = (res.logs?.stderr ?? []).join('\n')
-      const exitCode = res.error ? 1 : 0
+      const rawOut = (res.logs?.stdout ?? []).join('\n')
+      const rawErr = (res.logs?.stderr ?? []).join('\n')
+      const combined = [rawOut, rawErr].filter(Boolean).join('\n')
+      const match = combined.match(/__EXIT_CODE__=(\d+)/)
+      const exitCode = match ? parseInt(match[1], 10) : 0
+      const stripMarker = (text: string) => text.replace(/\n?__EXIT_CODE__=\d+\s*$/m, '')
+      const stdout = stripMarker(rawOut)
+      const stderr = stripMarker(rawErr)
       return { stdout, stderr, exitCode }
     },
 
     async readFile(path: string) {
-      return await sbx.files.read(path)
+      const abs = path.startsWith('/home/user/') ? path : `${WORKSPACE_DIR}/${path}`
+      return await sbx.files.read(abs)
     },
 
     async writeFile(path: string, content: string) {
-      await sbx.files.write(path, content)
+      const abs = path.startsWith('/home/user/') ? path : `${WORKSPACE_DIR}/${path}`
+      // Ensure parent directory exists before writing
+      try {
+        const dir = abs.substring(0, abs.lastIndexOf('/')) || WORKSPACE_DIR
+        await sbx.run(`mkdir -p ${JSON.stringify(dir)}`)
+      } catch {}
+      await sbx.files.write(abs, content)
     },
 
     async applyPatch(patch: string, opts?: { cwd?: string }) {
       const cwd = opts?.cwd ?? WORKSPACE_DIR
       // Write patch to a temp file and try to apply with `git apply` then fallback to `patch`
       const py = `
-import os, subprocess, tempfile, textwrap, sys
+import os, subprocess, tempfile, textwrap
 patch_text = textwrap.dedent('''\
-${patch.replace(/\\/g, '\\\\').replace(/`/g, '\`').replace(/\$/g, '\\$').replace(/\/\/\//g, '\/\/\/')}''')
+${patch.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$').replace(/\/\/\//g, '\/\/\/')}''')
 fd, tmp = tempfile.mkstemp(suffix='.patch')
 os.write(fd, patch_text.encode())
 os.close(fd)
@@ -68,15 +81,21 @@ res = run(['git', 'apply', '--whitespace=nowarn', tmp])
 if res.returncode != 0:
     res = run(['patch', '-p0', '-u', '-i', tmp])
 
-print(res.stdout, end='')
+if res.stdout:
+    print(res.stdout, end='')
 if res.stderr:
-    print(res.stderr, end='', file=sys.stderr)
-sys.exit(res.returncode)
+    print(res.stderr, end='')
+print("\n__EXIT_CODE__=%d" % res.returncode)
       `
       const res = await sbx.runCode(py)
-      const stdout = (res.logs?.stdout ?? []).join('\n')
-      const stderr = (res.logs?.stderr ?? []).join('\n')
-      const exitCode = res.error ? 1 : 0
+      const rawOut = (res.logs?.stdout ?? []).join('\n')
+      const rawErr = (res.logs?.stderr ?? []).join('\n')
+      const combined = [rawOut, rawErr].filter(Boolean).join('\n')
+      const match = combined.match(/__EXIT_CODE__=(\d+)/)
+      const exitCode = match ? parseInt(match[1], 10) : 0
+      const stripMarker = (text: string) => text.replace(/\n?__EXIT_CODE__=\d+\s*$/m, '')
+      const stdout = stripMarker(rawOut)
+      const stderr = stripMarker(rawErr)
       return { stdout, stderr, exitCode }
     },
 
@@ -111,7 +130,12 @@ export async function connectSandbox(sessionId: string): Promise<SandboxWrapper>
 export async function runCmd(sbx: SandboxWrapper, cmd: string, cwd?: string) {
   console.log("[E2B] Running command:", cmd)
   const res = await sbx.run(cmd, { cwd })
-  return (res.stdout ?? '') + (res.stderr ?? '')
+  const stdout = res.stdout ?? ''
+  const stderr = res.stderr ?? ''
+  if (res.exitCode !== 0) {
+    throw new Error(`Command failed (exit ${res.exitCode}): ${stderr || stdout}`)
+  }
+  return stdout || stderr
 }
 
 export async function readFile(sbx: SandboxWrapper, path: string) {
@@ -126,7 +150,8 @@ export async function writeFile(sbx: SandboxWrapper, path: string, content: stri
 
 export async function installPkgs(sbx: SandboxWrapper, pkgs: string[]) {
   console.log("[E2B] Installing packages:", pkgs)
-  const cmd = `npm i -D ${pkgs.join(' ')}`
+  // Ensure pnpm is available and install dev dependencies using pnpm
+  const cmd = `bash -lc "corepack enable >/dev/null 2>&1 || true; corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true; pnpm add -D ${pkgs.join(' ')}"`
   const res = await sbx.run(cmd, { cwd: WORKSPACE_DIR })
   return (res.stdout ?? '') + (res.stderr ?? '')
 }

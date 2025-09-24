@@ -7,6 +7,7 @@ The chat interface now supports advanced coding agent commands with automatic di
 ## Features
 
 ### 1. Agent Commands
+
 Users can provide direct commands in chat messages:
 
 - **@edit file.ts** - Edit an existing file
@@ -16,13 +17,17 @@ Users can provide direct commands in chat messages:
 - **@apply** - Apply a diff patch
 
 ### 2. Automatic Diff Generation
+
 When the agent responds with code blocks, the system automatically:
+
 - Detects file paths in code block headers
 - Generates diffs between current and new content
 - Applies changes directly to the E2B sandbox
 
 ### 3. Enhanced Code Change Detection
+
 The system can identify code changes from:
+
 - Code blocks with file paths
 - Explicit file operation mentions in text
 - Agent responses containing code modifications
@@ -30,6 +35,7 @@ The system can identify code changes from:
 ## Usage Examples
 
 ### Example 1: Direct Commands
+
 ```
 User: @create components/Button.tsx
 ```tsx
@@ -37,10 +43,11 @@ export const Button = ({ children, onClick }) => {
   return <button onClick={onClick}>{children}</button>
 }
 ```
-```
 
 ### Example 2: Agent Response Processing
+
 When the agent responds with code, it automatically:
+
 1. Parses code blocks for file paths
 2. Fetches current file content
 3. Generates unified diffs
@@ -48,20 +55,21 @@ When the agent responds with code, it automatically:
 5. Shows status in the UI
 
 ### Example 3: Multiple File Operations
-```
+
 User: Please create a new React component with tests
 
 Agent: I'll create a Button component with tests.
 
 Creating `components/Button.tsx`:
+
 ```tsx
 // Component code here
 ```
 
 Creating `components/Button.test.tsx`:
+
 ```tsx
 // Test code here
-```
 ```
 
 ## Implementation Details

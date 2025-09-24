@@ -105,6 +105,45 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
     fetchFiles()
   }, [sandboxId])
 
+  // Refresh listener: reload file tree when sandbox files change
+  useEffect(() => {
+    if (!sandboxId) return
+    const handler = (e: Event) => {
+      const ev = e as CustomEvent
+      if (!ev.detail || ev.detail.sandboxId !== sandboxId) return
+      ;(async () => {
+        try {
+          const response = await fetch(`/api/sandbox/${sandboxId}/files?path=/home/user/workspace`)
+          const data = await response.json()
+          if (data.success) {
+            const normalized = normalizeE2BFileList(data.files, "/home/user/workspace")
+            const fileTree = convertToFileTree(normalized)
+            setFiles(fileTree)
+
+            // If a file is selected, re-read its content
+            if (selectedFile) {
+              const sel = findFileById(fileTree, selectedFile)
+              if (sel && sel.type === 'file') {
+                try {
+                  const resp = await fetch(`/api/sandbox/${sandboxId}/files`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'read', path: sel.path })
+                  })
+                  const resJson = await resp.json()
+                  const content = resJson?.result?.content || ''
+                  setFiles(prev => updateFileContent(prev, sel.id, content))
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      })()
+    }
+    window.addEventListener('sandbox-files-changed', handler as EventListener)
+    return () => window.removeEventListener('sandbox-files-changed', handler as EventListener)
+  }, [sandboxId, selectedFile])
+
   // Load bookmarks for this project
   useEffect(() => {
     try {
@@ -259,7 +298,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'delete',
-          path: `/home/user/workspace/${file.path}`
+          path: file.path
         })
       })
 
@@ -286,13 +325,17 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
     }
 
     try {
+      const dir = file.path.startsWith('/home/user/')
+        ? file.path.split('/').slice(0, -1).join('/')
+        : '/home/user/workspace'
+      const newAbsPath = `${dir}/${newName}`
       await fetch(`/api/sandbox/${sandboxId}/files`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'move',
-          path: `/home/user/workspace/${file.path}`,
-          newPath: `/home/user/workspace/${newName}`
+          path: file.path,
+          newPath: newAbsPath
         })
       })
 
@@ -315,7 +358,10 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
     }
 
     try {
-      const newPath = `/home/user/workspace/${file.name} copy`
+      const dir = file.path.startsWith('/home/user/')
+        ? file.path.split('/').slice(0, -1).join('/')
+        : '/home/user/workspace'
+      const newPath = `${dir}/${file.name} copy`
 
       if (file.type === 'file') {
         // Read original file content
@@ -324,7 +370,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'read',
-            path: `/home/user/workspace/${file.path}`
+            path: file.path
           })
         })
         const readData = await readResponse.json()
@@ -395,7 +441,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   return (
     <div className="flex h-full">
       {/* File Tree Sidebar */}
-      <div className="w-80 border-r border-border bg-card">
+      <div className="w-80 border-r border-border bg-card flex flex-col overflow-hidden">
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium">Files</h3>

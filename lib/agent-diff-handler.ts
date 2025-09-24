@@ -275,7 +275,7 @@ export async function processAgentResponseWithDiffs(
                 body: JSON.stringify({ action: "read", path })
             })
             const result = await response.json()
-            return result.content || ""
+            return (result && result.result && result.result.content) ? result.result.content : ""
         }
 
         // Generate diffs

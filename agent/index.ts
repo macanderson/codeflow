@@ -43,17 +43,29 @@ Follow these rules strictly:
 - Prefer small, testable iterations with concrete, reproducible commands and file edits.
 - Do not ask the user questions; decide and proceed with the best next step.`;
 
+  // Maintain running conversation history across steps
+  type Msg = { role: "system" | "user" | "assistant"; content: string };
+  const history: Msg[] = [];
+
+  // Initial reasoning
   const initial = await llm.complete([
     { role: "system", content: system },
     { role: "user", content: `Task: ${task}\nConstraints:\n- Use pnpm for all Node tasks\n- Keep steps atomic\n- After each step, propose the exact next tool call you will make` }
   ]);
   emitter.emit("event", { type: "plan", content: initial.text });
 
-  for (let step = 0; step < 12; step++) {
+  // Seed history with the user task and the assistant's initial plan
+  history.push(
+    { role: "user", content: `Task: ${task}` },
+    { role: "assistant", content: initial.text }
+  );
+
+  for (let step = 0; step < 24; step++) {
+    // Ask the model to choose the next tool based on full history
     const toolReq = await llm.jsonToolCall([
       { role: "system", content: system },
-      { role: "user", content: `Repository cloned at /home/user/workspace.\nUser task: ${task}\nRemember: never use interactive editors; use pnpm; return one JSON with {tool, args}.` },
-      { role: "assistant", content: initial.text }
+      ...history,
+      { role: "user", content: `Return one JSON {tool, args}. Continue the task.` }
     ], {
       tools: {
         "cmd.run": { cmd: "string", cwd: "string?" },
@@ -69,7 +81,9 @@ Follow these rules strictly:
 
     let out = "";
     try {
-      if (name === "cmd.run") out = await runCmd(sbx, args.cmd, args.cwd);
+      if (name === "cmd.run") {
+        out = await runCmd(sbx, args.cmd, args.cwd);
+      }
       else if (name === "fs.read") out = await readFile(sbx, args.path);
       else if (name === "fs.write") { await writeFile(sbx, args.path, args.content); out = "OK"; }
       else if (name === "pkg.install") out = await installPkgs(sbx, args.pkgs);
@@ -82,14 +96,25 @@ Follow these rules strictly:
       emitter.emit("event", { type: "tool", name, input: args, output: (out ?? "").toString().slice(0, 2000) });
     } catch (e: any) {
       emitter.emit("event", { type: "error", error: e?.message ?? String(e) });
+      // Reflect error into history and stop
+      history.push({ role: "user", content: `Tool ${name} error: ${e?.message ?? String(e)}` });
       break;
     }
 
+    // Append tool output into history for the next decision
+    const brief = (out ?? "").toString().slice(0, 4000);
+    history.push({ role: "user", content: `Tool ${name} output:\n${brief}` });
+
+    // Ask if done or what to do next, and persist this reasoning into history
     const verdict = await llm.complete([
       { role: "system", content: system },
-      { role: "user", content: `Last tool output:\n${(out ?? "").toString().slice(0, 4000)}\nIs the task complete? If yes, summarize starting with 'DONE:'. If no, do not ask questions; propose the exact next tool call (name and args) you will make.` }
+      ...history,
+      { role: "user", content: `If the task is complete, respond starting with 'DONE:' and provide a brief summary. Otherwise, describe the next step briefly.` }
     ]);
     emitter.emit("event", { type: "plan", content: verdict.text });
+
+    history.push({ role: "assistant", content: verdict.text });
+
     if (/^DONE:/i.test(verdict.text)) {
       emitter.emit("event", { type: "done", summary: verdict.text });
       break;

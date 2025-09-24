@@ -60,6 +60,11 @@ export async function POST(request: NextRequest, { params }: { params: { session
       case 'write':
         {
           const writePath = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+          // Ensure parent directory exists before writing
+          try {
+            const dir = writePath.substring(0, writePath.lastIndexOf('/')) || '/home/user/workspace'
+            await sbx.files.makeDir(dir)
+          } catch {}
           await sbx.files.write(writePath, content)
         }
         result = { message: "File written successfully" }

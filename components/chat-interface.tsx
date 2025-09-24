@@ -2,13 +2,15 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 // Removed ScrollArea in favor of a simple overflow container
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { ChatSuggestions } from "@/components/chat-suggestions"
+import { LabBeakerLoader } from "@/components/lab-beaker-loader"
+import { CommandInput } from "@/components/command-input"
 import {
   Send,
   Paperclip,
@@ -89,6 +91,10 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [recreating, setRecreating] = useState(false)
+  const [initializing, setInitializing] = useState(!sandboxId && !!repoUrl)
+
+  const storageKey = useMemo(() => `chat:${projectId}:${sandboxId || 'none'}`, [projectId, sandboxId])
+  const prevStorageKeyRef = useRef<string>(storageKey)
 
   const scrollToBottom = () => {
     const container = scrollAreaRef.current
@@ -100,6 +106,58 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
     const id = requestAnimationFrame(scrollToBottom)
     return () => cancelAnimationFrame(id)
   }, [messages, isGenerating])
+
+  // Load persisted chat on mount or when context changes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey)
+      if (raw) {
+        const saved = JSON.parse(raw) as any[]
+        const restored: Message[] = saved.map((m) => ({
+          ...m,
+          timestamp: new Date(m.timestamp),
+        }))
+        setMessages(restored)
+      }
+    } catch {}
+  }, [storageKey])
+
+  // Migrate persisted chat when storage key changes (e.g., sandbox becomes available)
+  useEffect(() => {
+    const prevKey = prevStorageKeyRef.current
+    if (prevKey !== storageKey) {
+      try {
+        const newRaw = localStorage.getItem(storageKey)
+        const oldRaw = localStorage.getItem(prevKey)
+        if (!newRaw && oldRaw) {
+          // Move old conversation to new key and restore
+          localStorage.setItem(storageKey, oldRaw)
+          const saved = JSON.parse(oldRaw) as any[]
+          const restored: Message[] = saved.map((m) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }))
+          setMessages(restored)
+        }
+      } catch {}
+      prevStorageKeyRef.current = storageKey
+    }
+  }, [storageKey])
+
+  // Persist chat whenever messages change
+  useEffect(() => {
+    try {
+      const serializable = messages.map((m) => ({ ...m, timestamp: m.timestamp.toISOString() }))
+      localStorage.setItem(storageKey, JSON.stringify(serializable))
+    } catch {}
+  }, [messages, storageKey])
+
+  // Handle initialization state when sandboxId changes
+  useEffect(() => {
+    if (sandboxId && initializing) {
+      setInitializing(false)
+    }
+  }, [sandboxId, initializing])
 
   const handleSendMessage = async (messageText?: string) => {
     const text = messageText || inputValue
@@ -139,6 +197,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
         let buffer = ''
         let reasoningAccum = ''
         let summaryContent = ''
+        const changedPaths: string[] = []
         const pushAssistant = (content: string, reasoning?: string) => {
           setMessages(prev => {
             const last = prev[prev.length - 1]
@@ -169,10 +228,25 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                 pushAssistant(summaryContent, reasoningAccum)
               } else if (ev === 'tool') {
                 reasoningAccum += `\n\n> ${data.name}`
+                try {
+                  if (data.name === 'fs.write' && data.input?.path) {
+                    changedPaths.push(data.input.path)
+                  }
+                  if (data.name === 'edit.fastApply' && data.input?.path) {
+                    changedPaths.push(data.input.path)
+                  }
+                } catch {}
                 pushAssistant(summaryContent, reasoningAccum)
               } else if (ev === 'done') {
                 summaryContent = data.summary || summaryContent
                 pushAssistant(summaryContent, reasoningAccum)
+                try {
+                  if (changedPaths.length > 0) {
+                    window.dispatchEvent(new CustomEvent('sandbox-files-changed', {
+                      detail: { sandboxId, changedPaths }
+                    }))
+                  }
+                } catch {}
               } else if (ev === 'error') {
                 reasoningAccum += `\n\nError: ${data.error}`
                 pushAssistant(summaryContent || 'An error occurred.', reasoningAccum)
@@ -208,6 +282,16 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                 }
                 return m
               }))
+
+              try {
+                // Notify listeners (e.g., FileExplorer) that files changed
+                window.dispatchEvent(new CustomEvent('sandbox-files-changed', {
+                  detail: {
+                    sandboxId,
+                    changedPaths: diffResult.changes.map(c => c.path)
+                  }
+                }))
+              } catch {}
             }
           } catch (error) {
             console.error('Enhanced diff processing failed, falling back:', error)
@@ -223,7 +307,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                   body: JSON.stringify({ action: 'read', path })
                 })
                 const result = await response.json()
-                return result.content || ''
+                return (result && result.result && result.result.content) ? result.result.content : ''
               }
             )
 
@@ -238,6 +322,15 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                 }
                 return m
               }))
+
+              try {
+                window.dispatchEvent(new CustomEvent('sandbox-files-changed', {
+                  detail: {
+                    sandboxId,
+                    changedPaths: (processResult.edits || []).map((e: any) => e.path)
+                  }
+                }))
+              } catch {}
             }
           }
         }
@@ -268,7 +361,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                 body: JSON.stringify({ action: 'read', path })
               })
               const result = await response.json()
-              return result.content || ''
+              return (result && result.result && result.result.content) ? result.result.content : ''
             }
           )
 
@@ -321,7 +414,22 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    // Don't submit if we're still in command mode (CommandInput will handle it)
     if (e.key === "Enter" && !e.shiftKey) {
+      // Check if we're currently typing a command
+      const textarea = e.target as HTMLTextAreaElement
+      const cursorPosition = textarea.selectionStart
+      const textBeforeCursor = inputValue.substring(0, cursorPosition)
+      const lastAtIndex = textBeforeCursor.lastIndexOf("@")
+
+      if (lastAtIndex !== -1) {
+        const commandText = textBeforeCursor.substring(lastAtIndex + 1)
+        // If we're in the middle of typing a command, don't submit
+        if (commandText.length > 0 && !commandText.includes(" ")) {
+          return
+        }
+      }
+
       e.preventDefault()
       handleSendMessage()
     }
@@ -462,32 +570,8 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
         className="overflow-y-auto resize-y min-h-[240px] h-[60vh] max-h-[80vh]"
       >
         {messages.length === 0 ? (
-          recreating ? (
-            <div className="p-8 flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div className="mx-auto h-16 w-16 rounded-full bg-muted flex items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold">Re-creating Sandbox Environment</h3>
-                  <p className="text-sm text-muted-foreground">Cloning repository and setting up a fresh workspace...</p>
-                </div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
-                    <span>Creating E2B sandbox</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
-                    <span>Cloning repository</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Installing dependencies</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          (recreating || initializing) ? (
+            <LabBeakerLoader />
           ) : (
             <div className="mx-auto w-full max-w-3xl px-4 py-8">
               <ChatSuggestions onSuggestionClick={handleSuggestionClick} />
@@ -544,21 +628,21 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex items-end gap-2">
           <div className="flex-1 relative">
-            <Textarea
+            <CommandInput
               ref={textareaRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={setInputValue}
               onKeyPress={handleKeyPress}
               placeholder="Ask me to build a feature, or use @edit, @create, @delete, @run commands..."
-              className="min-h-[60px] max-h-[40vh] resize-y pr-12"
+              className="min-h-[60px] max-h-[40vh] resize-y pr-12 rounded-md border border-input bg-background"
               disabled={isGenerating}
             />
             <Button
               variant="ghost"
               size="sm"
-              className="absolute right-2 top-2 h-8 w-8 p-0"
+              className="absolute right-2 bottom-2 h-8 w-8 p-0"
               onClick={() => fileInputRef.current?.click()}
               disabled={isGenerating}
             >
@@ -569,6 +653,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
           <Button
             onClick={() => handleSendMessage()}
             disabled={isGenerating || (!inputValue.trim() && attachments.length === 0)}
+            className="mb-0"
           >
             <Send className="h-4 w-4" />
           </Button>
@@ -693,8 +778,27 @@ function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
             </div>
           )}
 
-          {/* File Edits Status */}
-          {message.fileEdits && message.fileEdits.length > 0 && (
+          {/* Reasoning (collapsed by default) */}
+          {!isUser && message.reasoning && (
+            <div className="mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-2 py-1 h-7"
+                onClick={() => setShowReasoning((v) => !v)}
+              >
+                Reasoning &gt;
+              </Button>
+              {showReasoning && (
+                <div className="mt-2 rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+                  <pre className="whitespace-pre-wrap break-words">{message.reasoning}</pre>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* File Edits Status (moved below reasoning) */}
+          {!isUser && !message.isGenerating && message.fileEdits && message.fileEdits.length > 0 && (
             <div className="mt-3">
               <div className="border border-border rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -734,8 +838,8 @@ function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
             </div>
           )}
 
-          {/* Enhanced Code Changes with Diffs */}
-          {message.codeChanges && message.codeChanges.length > 0 && (
+          {/* Enhanced Code Changes with Diffs (moved below reasoning) */}
+          {!isUser && !message.isGenerating && message.codeChanges && message.codeChanges.length > 0 && (
             <div className="mt-3">
               <div className="border border-border rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -810,25 +914,6 @@ function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Reasoning (collapsed by default) */}
-          {!isUser && message.reasoning && (
-            <div className="mt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="px-2 py-1 h-7"
-                onClick={() => setShowReasoning((v) => !v)}
-              >
-                Reasoning &gt;
-              </Button>
-              {showReasoning && (
-                <div className="mt-2 rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
-                  <pre className="whitespace-pre-wrap break-words">{message.reasoning}</pre>
-                </div>
-              )}
             </div>
           )}
         </div>

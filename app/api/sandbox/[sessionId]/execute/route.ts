@@ -31,6 +31,11 @@ patch_text = json.loads(${JSON.stringify(patchJson)})
 fd, tmp = tempfile.mkstemp(suffix='.patch')
 os.write(fd, patch_text.encode())
 os.close(fd)
+# Ensure directory exists before applying
+try:
+    os.makedirs('${cwd}', exist_ok=True)
+except Exception as e:
+    pass
 res = subprocess.run(['git','apply','--whitespace=nowarn', tmp], cwd='${cwd}', capture_output=True, text=True)
 if res.returncode != 0:
     res = subprocess.run(['patch','-p0','-u','-i', tmp], cwd='${cwd}', capture_output=True, text=True)
@@ -50,18 +55,19 @@ sys.exit(res.returncode)
         result = await sbx.runCode(`
 import subprocess
 import sys
+import os
 
 try:
+    cwd = '/home/user/workspace' if os.path.exists('/home/user/workspace') else '/home/user'
     result = subprocess.run('${command.replace(/'/g, "\\'")}',
                           shell=True,
                           capture_output=True,
                           text=True,
-                          cwd='/home/user/workspace' if os.path.exists('/home/user/workspace') else '/home/user')
+                          cwd=cwd)
 
-    print("STDOUT:")
-    print(result.stdout)
+    if result.stdout:
+        print(result.stdout)
     if result.stderr:
-        print("STDERR:")
         print(result.stderr)
 
     sys.exit(result.returncode)
@@ -80,7 +86,7 @@ except Exception as e:
     }
 
     return NextResponse.json({
-      success: true,
+      success: exitCode === 0,
       output,
       exitCode,
       sessionId,

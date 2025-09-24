@@ -107,30 +107,113 @@ if result.returncode == 0:
 
     # Check for package.json and install dependencies
     if os.path.exists('/home/user/workspace/package.json'):
-        print("Found package.json, checking package manager...")
+        print("Found package.json, analyzing project...")
         sys.stdout.flush()
 
-        # Check which package manager to use
-        if os.path.exists('/home/user/workspace/pnpm-lock.yaml'):
-            print("Using pnpm install...")
-            cmd = ['pnpm', 'install']
-        elif os.path.exists('/home/user/workspace/yarn.lock'):
-            print("Using yarn install...")
-            cmd = ['yarn', 'install']
-        else:
-            print("Using npm install...")
-            cmd = ['npm', 'install', '--legacy-peer-deps']  # Add flag to handle peer dep issues
+        import json
+        package_manager = None
+        install_cmd = None
 
         try:
-            install_result = subprocess.run(cmd, cwd='/home/user/workspace', capture_output=True, text=True, timeout=90)
-        except subprocess.TimeoutExpired:
-            print("Dependency installation timed out")
-            install_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Install timed out")
-        if install_result.returncode == 0:
-            print("Dependencies installed successfully")
-        else:
-            print("Failed to install dependencies:")
-            print(install_result.stderr)
+            # Check for packageManager field in package.json
+            with open('/home/user/workspace/package.json', 'r') as f:
+                package_json = json.load(f)
+
+                if 'packageManager' in package_json:
+                    pm_spec = package_json['packageManager']
+                    pm_name = pm_spec.split('@')[0]
+                    print(f"Package manager specified in package.json: {pm_name}")
+
+                    if pm_name == 'pnpm':
+                        # Try to install pnpm if not present
+                        try:
+                            subprocess.run(['sh', '-c', 'curl -fsSL https://get.pnpm.io/install.sh | sh -'], capture_output=True, text=True, timeout=30)
+                            os.environ['PATH'] = f"/home/user/.local/share/pnpm:{os.environ['PATH']}"
+                            print("pnpm installed successfully")
+                        except:
+                            pass
+                        package_manager = 'pnpm'
+                        install_cmd = ['pnpm', 'install']
+                    elif pm_name == 'yarn':
+                        try:
+                            subprocess.run(['npm', 'install', '-g', 'yarn'], capture_output=True, text=True, timeout=30)
+                            print("yarn installed successfully")
+                        except:
+                            pass
+                        package_manager = 'yarn'
+                        install_cmd = ['yarn', 'install']
+                    elif pm_name == 'npm':
+                        package_manager = 'npm'
+                        install_cmd = ['npm', 'install', '--legacy-peer-deps']
+        except Exception as e:
+            print(f"Error reading package.json: {e}")
+
+        # If no packageManager field, check lock files
+        if not package_manager:
+            if os.path.exists('/home/user/workspace/pnpm-lock.yaml'):
+                print("Detected pnpm-lock.yaml")
+                try:
+                    subprocess.run(['sh', '-c', 'curl -fsSL https://get.pnpm.io/install.sh | sh -'], capture_output=True, text=True, timeout=30)
+                    os.environ['PATH'] = f"/home/user/.local/share/pnpm:{os.environ['PATH']}"
+                except:
+                    pass
+                package_manager = 'pnpm'
+                install_cmd = ['pnpm', 'install']
+            elif os.path.exists('/home/user/workspace/yarn.lock'):
+                print("Detected yarn.lock")
+                try:
+                    subprocess.run(['npm', 'install', '-g', 'yarn'], capture_output=True, text=True, timeout=30)
+                except:
+                    pass
+                package_manager = 'yarn'
+                install_cmd = ['yarn', 'install']
+            elif os.path.exists('/home/user/workspace/package-lock.json'):
+                print("Detected package-lock.json")
+                package_manager = 'npm'
+                install_cmd = ['npm', 'ci', '--legacy-peer-deps']
+            else:
+                # Default to pnpm LTS as specified
+                print("No lock file detected, defaulting to pnpm LTS")
+                try:
+                    subprocess.run(['sh', '-c', 'curl -fsSL https://get.pnpm.io/install.sh | sh -'], capture_output=True, text=True, timeout=30)
+                    os.environ['PATH'] = f"/home/user/.local/share/pnpm:{os.environ['PATH']}"
+                except:
+                    pass
+                package_manager = 'pnpm'
+                install_cmd = ['pnpm', 'install']
+
+        # Install dependencies
+        if install_cmd:
+            print(f"Installing dependencies with {package_manager}...")
+            sys.stdout.flush()
+
+            try:
+                # Update PATH for pnpm if needed
+                if package_manager == 'pnpm':
+                    os.environ['PATH'] = f"/home/user/.local/share/pnpm:{os.environ['PATH']}"
+
+                install_result = subprocess.run(
+                    install_cmd,
+                    cwd='/home/user/workspace',
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    env=os.environ
+                )
+
+                if install_result.returncode == 0:
+                    print(f"✅ Dependencies installed successfully with {package_manager}")
+                    # List installed packages summary
+                    if os.path.exists('/home/user/workspace/node_modules'):
+                        count = len(os.listdir('/home/user/workspace/node_modules'))
+                        print(f"📦 Installed {count} packages")
+                else:
+                    print(f"⚠️ Failed to install dependencies with {package_manager}:")
+                    print(install_result.stderr[:1000])  # Limit error output
+            except subprocess.TimeoutExpired:
+                print("⏱️ Dependency installation timed out after 2 minutes")
+            except Exception as e:
+                print(f"❌ Error during installation: {e}")
 
     # Check for requirements.txt and install Python dependencies
     elif os.path.exists('/home/user/workspace/requirements.txt'):
