@@ -8,13 +8,17 @@ export async function POST(request: NextRequest) {
 
     console.log("[E2B] Creating sandbox:", { projectId, template, githubRepo, branch })
 
-    // Create E2B sandbox
+    // Create E2B sandbox with timeout
     const sbx = await Sandbox.create(projectId, {
       accessToken: process.env.E2B_ACCESS_TOKEN,
       // name: projectId,
       // template: template || 'base', // Use base template if none specified
       apiKey: process.env.E2B_API_KEY,
+      timeoutMs: 60000, // 60 seconds timeout
     })
+
+    // Set additional timeout for operations
+    await sbx.setTimeout(120000) // 2 minutes for operations
 
     const sessionId = sbx.sandboxId
     console.log("[E2B] Sandbox created with ID:", sessionId)
@@ -24,17 +28,29 @@ export async function POST(request: NextRequest) {
       try {
         console.log("[E2B] Cloning GitHub repository:", githubRepo)
 
-        // Clone the repository
+        // Clone the repository with timeout
         const cloneResult = await sbx.runCode(`
 import subprocess
 import os
+import sys
 
-# Clone the repository
-result = subprocess.run([
-    'git', 'clone',
-    '${githubRepo}',
-    'workspace'
-], capture_output=True, text=True, cwd='/home/user')
+# Set git config for better performance
+subprocess.run(['git', 'config', '--global', 'http.postBuffer', '524288000'], capture_output=True)
+
+print("Starting repository clone...")
+sys.stdout.flush()
+
+# Clone the repository with timeout
+try:
+    result = subprocess.run([
+        'git', 'clone',
+        '--depth', '1',  # Shallow clone for speed
+        '${githubRepo}',
+        'workspace'
+    ], capture_output=True, text=True, cwd='/home/user', timeout=60)
+except subprocess.TimeoutExpired:
+    print("Clone operation timed out")
+    result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Clone timed out")
 
 if result.returncode == 0:
     print("Repository cloned successfully")
@@ -45,7 +61,7 @@ if result.returncode == 0:
 else:
     print("Failed to clone repository:")
     print(result.stderr)
-        `)
+        `, { timeoutMs: 90000 })  // 1.5 minutes timeout // 1.5 minutes timeout
 
         console.log("[E2B] Clone result:", cloneResult.logs)
 
@@ -55,16 +71,32 @@ import os
 import subprocess
 
 if os.path.exists('/home/user/workspace/package.json'):
-    print("Found package.json, installing dependencies...")
-    result = subprocess.run(['npm', 'install'], cwd='/home/user/workspace', capture_output=True, text=True)
+    print("Found package.json, checking package manager...")
+
+    # Check which package manager to use
+    if os.path.exists('/home/user/workspace/pnpm-lock.yaml'):
+        print("Using pnpm...")
+        cmd = ['pnpm', 'install']
+    elif os.path.exists('/home/user/workspace/yarn.lock'):
+        print("Using yarn...")
+        cmd = ['yarn', 'install']
+    else:
+        print("Using npm...")
+        cmd = ['npm', 'install', '--legacy-peer-deps']
+
+    try:
+        result = subprocess.run(cmd, cwd='/home/user/workspace', capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        print("Dependency installation timed out")
+        result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Install timed out")
     if result.returncode == 0:
         print("Dependencies installed successfully")
     else:
         print("Failed to install dependencies:")
         print(result.stderr)
 else:
-    print("No package.json found")
-        `)
+    print("No package.json found")  // 1.5 minutes timeout
+        `, { timeoutMs: 90000 })  // 1.5 minutes timeout // 1.5 minutes timeout
 
         console.log("[E2B] Package installation:", checkPackageResult.logs)
 

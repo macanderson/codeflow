@@ -60,16 +60,11 @@ function GitHubCallbackContent() {
           const returnUrl = localStorage.getItem('github_auth_return_url')
           localStorage.removeItem('github_auth_return_url')
 
-          // Redirect back to the original page or repository selection
+          // Redirect back to home and trigger modal reopen for repos selection
           setTimeout(() => {
-            if (returnUrl && returnUrl !== window.location.href) {
-              // If we came from the modal, just close the callback page
-              // The modal will detect the new auth data and update automatically
-              window.close()
-            } else {
-              router.push('/github/repositories')
-            }
-          }, 2000)
+            // Prefer returning to home with a flag to open the repos modal
+            router.push('/?newProject=github')
+          }, 1200)
         } else {
           setStatus('error')
           setError(data.error || 'Failed to authenticate with GitHub')

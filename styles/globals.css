@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -121,5 +122,135 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer theme {
+  /* GitHub Flavored Markdown styles for .prose */
+  .prose {
+    @apply max-w-none text-base leading-relaxed text-foreground;
+    font-family: var(--font-sans);
+    word-break: break-word;
+    line-height: 1.7;
+  }
+
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4,
+  .prose h5,
+  .prose h6 {
+    @apply font-bold text-foreground mt-8 mb-4;
+    line-height: 1.25;
+  }
+
+  .prose h1 { @apply text-3xl border-b pb-2; line-height: 3rem; }
+  .prose h2 { @apply text-2xl border-b pb-1; line-height: 2.5rem; }
+  .prose h3 { @apply text-xl; line-height: 2rem; }
+  .prose h4 { @apply text-lg; line-height: 1.75rem; }
+  .prose h5 { @apply text-base; line-height: 1.5rem; }
+  .prose h6 { @apply text-sm; line-height: 1.25rem; }
+
+  .prose p {
+    @apply my-4;
+    line-height: 1.7;
+  }
+
+  .prose a {
+    @apply text-primary underline break-all;
+    transition: color 0.2s;
+  }
+
+  .prose a:hover {
+    @apply text-primary-foreground;
+  }
+
+  .prose ul,
+  .prose ol {
+    @apply my-4 pl-8;
+  }
+
+  .prose ul {
+    list-style-type: disc;
+  }
+
+  .prose ol {
+    list-style-type: decimal;
+  }
+
+  .prose li {
+    @apply my-2;
+  }
+
+  .prose blockquote {
+    @apply border-l-4 border-muted pl-4 italic text-muted-foreground my-4;
+    background: none;
+  }
+
+  .prose pre {
+    @apply bg-muted text-muted-foreground rounded-md p-4 overflow-x-auto my-4;
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+  }
+
+  .prose code {
+    @apply bg-muted text-accent-foreground rounded px-1 py-0.5 font-mono;
+    font-size: 0.95em;
+  }
+
+  .prose pre code {
+    @apply bg-transparent text-inherit px-0 py-0;
+  }
+
+  .prose hr {
+    @apply border-t border-border my-8;
+  }
+
+  .prose table {
+    @apply w-full border-collapse my-6 text-sm;
+  }
+
+  .prose th,
+  .prose td {
+    @apply border border-border px-3 py-2;
+  }
+
+  .prose th {
+    @apply bg-muted text-foreground font-semibold;
+  }
+
+  .prose img {
+    @apply max-w-full rounded my-4;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .prose strong {
+    @apply font-semibold text-foreground;
+  }
+
+  .prose em {
+    @apply italic;
+  }
+
+  .prose del {
+    @apply line-through text-muted-foreground;
+  }
+
+  .prose details {
+    @apply my-4;
+  }
+
+  .prose summary {
+    @apply cursor-pointer font-semibold;
+  }
+
+  .prose > *:first-child {
+    @apply mt-0;
+  }
+
+  .prose > *:last-child {
+    @apply mb-0;
   }
 }

@@ -77,11 +77,12 @@ export function ProjectHeader({ project, activeView, onViewChange }: ProjectHead
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/projects")}
             className="text-muted-foreground hover:text-foreground"
+            title="Back to Projects"
+            aria-label="Back to Projects"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Projects
+            <ArrowLeft className="h-4 w-4" />
           </Button>
 
           <div className="h-6 w-px bg-border" />

@@ -50,12 +50,6 @@ export function ProjectSidebar({
       description: "Chat with your coding agent",
     },
     {
-      id: "files",
-      label: "File Explorer",
-      icon: Files,
-      description: "Browse and edit project files",
-    },
-    {
       id: "sandbox",
       label: "Sandbox",
       icon: Play,

@@ -213,6 +213,14 @@ export function NewProjectModal({ open, onOpenChange }: NewProjectModalProps) {
         // Store project data
         localStorage.setItem('current_project', JSON.stringify(data.project))
         localStorage.setItem('current_sandbox', JSON.stringify(data.sandbox))
+        try {
+          const listRaw = localStorage.getItem('projects')
+          const list = listRaw ? JSON.parse(listRaw) : []
+          const existsIdx = list.findIndex((p: any) => p.id === data.project.id)
+          if (existsIdx >= 0) list[existsIdx] = data.project
+          else list.unshift(data.project)
+          localStorage.setItem('projects', JSON.stringify(list))
+        } catch {}
       } else {
         console.error('Failed to import repository:', data.error)
         setCurrentStep('repositories')

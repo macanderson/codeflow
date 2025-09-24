@@ -34,6 +34,8 @@ import {
   FolderPlus,
   FilePlus,
   Loader2,
+  Star,
+  StarOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
@@ -70,6 +72,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   const [createType, setCreateType] = useState<"file" | "folder">("file")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [bookmarks, setBookmarks] = useState<{ path: string; name: string; type: "file" | "folder" }[]>([])
 
   // Fetch files from sandbox (root)
   useEffect(() => {
@@ -101,6 +104,39 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
 
     fetchFiles()
   }, [sandboxId])
+
+  // Load bookmarks for this project
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`bookmarks:${projectId}`)
+      if (raw) setBookmarks(JSON.parse(raw))
+    } catch {}
+  }, [projectId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`bookmarks:${projectId}`, JSON.stringify(bookmarks))
+    } catch {}
+  }, [bookmarks, projectId])
+
+  const isBookmarked = (path: string) => bookmarks.some((b) => b.path === path)
+
+  const toggleBookmark = (file: FileItem) => {
+    setBookmarks((prev) => {
+      if (prev.some((b) => b.path === file.path)) {
+        return prev.filter((b) => b.path !== file.path)
+      }
+      return [...prev, { path: file.path, name: file.name, type: file.type }]
+    })
+  }
+
+  const openBookmark = (b: { path: string; name: string; type: "file" | "folder" }) => {
+    setFiles((prev) => expandFoldersForPath(prev, b.path))
+    const found = findFileByPath(files, b.path)
+    if (found && found.type === 'file') {
+      setSelectedFile(found.id)
+    }
+  }
 
   const handleFileSelect = async (fileId: string) => {
     setSelectedFile(fileId)
@@ -329,7 +365,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   }
 
   const filteredFiles = searchQuery
-    ? files.filter((file) => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? filterTreeByQuery(files, searchQuery)
     : files
 
   const selectedFileData = findFileById(files, selectedFile)
@@ -374,6 +410,27 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
               className="pl-10"
             />
           </div>
+
+          {bookmarks.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-muted-foreground mb-1">Bookmarks</div>
+              <div className="flex flex-wrap gap-2">
+                {bookmarks.map((b) => (
+                  <Button
+                    key={b.path}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => openBookmark(b)}
+                    title={b.path}
+                  >
+                    {b.type === 'folder' ? <Folder className="h-3 w-3 mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
+                    <span className="truncate max-w-[140px]">{b.name}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <ScrollArea className="flex-1">
@@ -386,6 +443,8 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
               onRenameItem={handleRenameItem}
               onDuplicateItem={handleDuplicateItem}
               selectedFile={selectedFile}
+              onToggleBookmark={toggleBookmark}
+              isBookmarked={isBookmarked}
             />
           </div>
         </ScrollArea>
@@ -424,6 +483,8 @@ interface FileTreeProps {
   onDuplicateItem: (itemId: string) => void
   selectedFile: string | null
   level?: number
+  onToggleBookmark: (file: FileItem) => void
+  isBookmarked: (path: string) => boolean
 }
 
 function FileTree({
@@ -435,6 +496,8 @@ function FileTree({
   onDuplicateItem,
   selectedFile,
   level = 0,
+  onToggleBookmark,
+  isBookmarked,
 }: FileTreeProps) {
   return (
     <div className="space-y-1">
@@ -449,6 +512,8 @@ function FileTree({
           onDuplicateItem={onDuplicateItem}
           selectedFile={selectedFile}
           level={level}
+          onToggleBookmark={onToggleBookmark}
+          isBookmarked={isBookmarked}
         />
       ))}
     </div>
@@ -464,6 +529,8 @@ interface FileTreeItemProps {
   onDuplicateItem: (itemId: string) => void
   selectedFile: string | null
   level: number
+  onToggleBookmark: (file: FileItem) => void
+  isBookmarked: (path: string) => boolean
 }
 
 function FileTreeItem({
@@ -475,6 +542,8 @@ function FileTreeItem({
   onDuplicateItem,
   selectedFile,
   level,
+  onToggleBookmark,
+  isBookmarked,
 }: FileTreeItemProps) {
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState(file.name)
@@ -535,9 +604,19 @@ function FileTreeItem({
               autoFocus
             />
           ) : (
-            <span className="truncate cursor-pointer">{file.name}</span>
+            <span className={cn("truncate cursor-pointer", file.type === "folder" && "font-medium")}>{file.name}</span>
           )}
         </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => onToggleBookmark(file)}
+          title={isBookmarked(file.path) ? "Remove bookmark" : "Add bookmark"}
+        >
+          {isBookmarked(file.path) ? <Star className="h-3 w-3 text-yellow-500" /> : <StarOff className="h-3 w-3" />}
+        </Button>
 
         {!READ_ONLY && (
         <DropdownMenu>
@@ -582,6 +661,8 @@ function FileTreeItem({
           onDuplicateItem={onDuplicateItem}
           selectedFile={selectedFile}
           level={level + 1}
+          onToggleBookmark={onToggleBookmark}
+          isBookmarked={isBookmarked}
         />
       )}
     </div>
@@ -730,6 +811,12 @@ function FileEditor({ file, onSave }: FileEditorProps) {
   const [content, setContent] = useState(file.content || "")
   const [hasChanges, setHasChanges] = useState(false)
 
+  // Keep editor content in sync with selected file
+  useEffect(() => {
+    setContent(file.content || "")
+    setHasChanges(false)
+  }, [file.id, file.content])
+
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
     setHasChanges(newContent !== file.content)
@@ -837,6 +924,9 @@ function FileEditor({ file, onSave }: FileEditorProps) {
 }
 
 // Helper functions
+function isBookmarked(path: string): boolean {
+  return false
+}
 function toggleFolderInTree(files: FileItem[], folderId: string): FileItem[] {
   return files.map((file) => {
     if (file.id === folderId && file.type === "folder") {
@@ -899,6 +989,33 @@ function findFileById(files: FileItem[], fileId: string | null): FileItem | null
   return null
 }
 
+function findFileByPath(files: FileItem[], path: string): FileItem | null {
+  for (const file of files) {
+    if (file.path === path) return file
+    if (file.children) {
+      const found = findFileByPath(file.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function expandFoldersForPath(files: FileItem[], path: string): FileItem[] {
+  const segments = path.split('/').filter(Boolean)
+  const recurse = (items: FileItem[], idx: number, accPath: string): FileItem[] => {
+    return items.map((item) => {
+      if (item.type === 'folder') {
+        const itemPath = accPath ? `${accPath}/${item.name}` : item.name
+        const shouldOpen = segments[idx] === item.name || path.startsWith(`${item.path}/`)
+        const children = item.children ? recurse(item.children, idx + (segments[idx] === item.name ? 1 : 0), itemPath) : item.children
+        return { ...item, isOpen: shouldOpen || item.isOpen, children }
+      }
+      return item
+    })
+  }
+  return recurse(files, 0, '')
+}
+
 // Helper functions for E2B integration
 function convertToFileTree(e2bFiles: any[]): FileItem[] {
   return e2bFiles.map((file, index) => ({
@@ -923,6 +1040,32 @@ function normalizeE2BFileList(files: any[], basePath?: string): { name: string; 
     const t = f.type || f.kind || (f.isDir ? 'directory' : 'file')
     return { name, path, type: t }
   })
+}
+
+// Filter a file tree by search query while preserving folder hierarchy
+function filterTreeByQuery(files: FileItem[], query: string): FileItem[] {
+  const q = query.toLowerCase()
+  const recurse = (items: FileItem[]): FileItem[] => {
+    const result: FileItem[] = []
+    for (const item of items) {
+      if (item.type === 'folder') {
+        const children = item.children ? recurse(item.children) : []
+        if (children.length > 0 || item.name.toLowerCase().includes(q)) {
+          result.push({ ...item, isOpen: true, children })
+        }
+      } else {
+        if (item.name.toLowerCase().includes(q)) {
+          result.push(item)
+        }
+      }
+    }
+    return result
+  }
+  return recurse(files)
+}
+
+function toggleBookmark(file: FileItem) {
+  // placeholder, replaced in component scope
 }
 
 function getLanguageFromExtension(filename: string): string {

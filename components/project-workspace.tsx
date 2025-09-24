@@ -8,6 +8,7 @@ import { CodeProjectDisplay } from "@/components/code-project-display"
 import { FileExplorer } from "@/components/file-explorer"
 import { ProjectSettings } from "@/components/project-settings"
 import { SandboxManager } from "@/components/sandbox-manager"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface ProjectWorkspaceProps {
   projectId: string
@@ -17,7 +18,7 @@ type ActiveView = "chat" | "files" | "settings" | "sandbox"
 
 export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [activeView, setActiveView] = useState<ActiveView>("chat")
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [project, setProject] = useState<any>(null)
   const [sandboxId, setSandboxId] = useState<string | null>(null)
 
@@ -83,17 +84,34 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
         <main className="flex-1 flex overflow-hidden">
           {activeView === "chat" && (
-            <div className="flex-1 grid grid-cols-3">
-              <div className="col-span-2 min-w-0 border-r border-border">
-                <ChatInterface projectId={projectId} sandboxId={sandboxId || undefined} />
+            <Tabs defaultValue="vibe" className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-4 pt-4">
+                <TabsList>
+                  <TabsTrigger value="vibe">Vibe</TabsTrigger>
+                  <TabsTrigger value="files">Files</TabsTrigger>
+                </TabsList>
               </div>
-              <div className="col-span-1 min-w-0">
+
+              <TabsContent value="vibe" className="flex-1 overflow-hidden m-0">
+                <div className="flex-1">
+                  <ChatInterface
+                    projectId={projectId}
+                    sandboxId={sandboxId || undefined}
+                    repoUrl={project?.repository?.html_url || project?.githubRepo}
+                    onSandboxRecreated={(newId) => setSandboxId(newId)}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="files" className="flex-1 overflow-hidden m-0">
                 <FileExplorer projectId={projectId} sandboxId={sandboxId || undefined} />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           )}
 
-          {activeView === "files" && <FileExplorer projectId={projectId} sandboxId={sandboxId || undefined} />}
+          {activeView === "files" && (
+            <FileExplorer projectId={projectId} sandboxId={sandboxId || undefined} />
+          )}
 
           {activeView === "settings" && <ProjectSettings project={project} />}
 

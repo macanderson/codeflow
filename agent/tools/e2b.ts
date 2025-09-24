@@ -91,31 +91,41 @@ sys.exit(res.returncode)
 }
 
 export async function createSandbox(): Promise<SandboxWrapper> {
-  const sbx = await Sandbox.create('codeflow-agent', {
+  const template = 'codeflow-agent'
+  console.log("[E2B] Creating sandbox:", template)
+  const sbx = await Sandbox.create(template, {
     apiKey: process.env.E2B_API_KEY,
   })
+  console.log("[E2B] Sandbox created:", sbx.sandboxId)
   return await wrapSandbox(sbx)
+
 }
 
 export async function connectSandbox(sessionId: string): Promise<SandboxWrapper> {
+  console.log("[E2B] Connecting to sandbox:", sessionId)
   const sbx = await Sandbox.connect(sessionId, { apiKey: process.env.E2B_API_KEY })
+  console.log("[E2B] Sandbox connected:", sbx.sandboxId)
   return await wrapSandbox(sbx)
 }
 
 export async function runCmd(sbx: SandboxWrapper, cmd: string, cwd?: string) {
+  console.log("[E2B] Running command:", cmd)
   const res = await sbx.run(cmd, { cwd })
   return (res.stdout ?? '') + (res.stderr ?? '')
 }
 
 export async function readFile(sbx: SandboxWrapper, path: string) {
+  console.log("[E2B] Reading file:", path)
   return await sbx.readFile(path)
 }
 
 export async function writeFile(sbx: SandboxWrapper, path: string, content: string) {
+  console.log("[E2B] Writing file:", path)
   await sbx.writeFile(path, content)
 }
 
 export async function installPkgs(sbx: SandboxWrapper, pkgs: string[]) {
+  console.log("[E2B] Installing packages:", pkgs)
   const cmd = `npm i -D ${pkgs.join(' ')}`
   const res = await sbx.run(cmd, { cwd: WORKSPACE_DIR })
   return (res.stdout ?? '') + (res.stderr ?? '')

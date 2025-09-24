@@ -1,12 +1,27 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { NewProjectModal } from "@/components/new-project-modal"
 import { Plus, GitBranch } from "lucide-react"
 
 export function ProjectDashboard() {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Auto-open modal when redirected from GitHub OAuth callback
+  useEffect(() => {
+    const newProject = searchParams.get("newProject")
+    if (newProject === "github") {
+      setShowNewProjectModal(true)
+      // Clear the query param to avoid re-trigger
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete("newProject")
+      router.replace(`/?${params.toString()}`)
+    }
+  }, [searchParams, router])
 
   return (
     <div className="space-y-8">
