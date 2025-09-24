@@ -99,39 +99,62 @@ export function ChatInterface({ projectId, sandboxId }: ChatInterfaceProps) {
       let codeBlocks: CodeBlock[] | undefined = undefined
 
       if (sandboxId) {
-        // Execute command in E2B sandbox
-        const commandResponse = await fetch(`/api/sandbox/${sandboxId}/execute`, {
+        // Stream events from the agent
+        const resp = await fetch('/api/agent/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            command: text,
-            language: 'bash'
-          })
+          body: JSON.stringify({ task: text, sandboxId })
         })
-
-        const commandData = await commandResponse.json()
-        
-        if (commandData.success) {
-          responseContent = `Command executed successfully:\n\n${commandData.output}`
-          
-          // If the command created or modified files, show them
-          if (text.includes('create') || text.includes('write') || text.includes('edit')) {
-            // Fetch updated file list
-            const filesResponse = await fetch(`/api/sandbox/${sandboxId}/files?path=/home/user/workspace`)
-            const filesData = await filesResponse.json()
-            
-            if (filesData.success && filesData.files.length > 0) {
-              responseContent += `\n\nFiles in workspace:`
-              filesData.files.forEach((file: any) => {
-                responseContent += `\n- ${file.name} (${file.type})`
-              })
+        if (!resp.ok || !resp.body) throw new Error('Failed to start agent')
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let assistantAccum = ''
+        const pushAssistant = (content: string) => {
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last && last.isGenerating) {
+              const updated = [...prev]
+              updated[updated.length - 1] = { ...last, content }
+              return updated
             }
-          }
-        } else {
-          responseContent = `Command failed:\n\n${commandData.output || commandData.error}`
+            return [...prev, { id: (Date.now()+2).toString(), type:'assistant', content, timestamp: new Date(), isGenerating: true }]
+          })
         }
+        pushAssistant('')
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() || ''
+          for (const part of parts) {
+            const lines = part.trim().split('\n')
+            const ev = lines.find(l => l.startsWith('event: '))?.slice(7)
+            const dataLine = lines.find(l => l.startsWith('data: '))?.slice(6)
+            if (!ev || !dataLine) continue
+            try {
+              const data = JSON.parse(dataLine)
+              if (ev === 'plan' || ev === 'log') {
+                assistantAccum += (assistantAccum ? '\n' : '') + (data.content || '')
+                pushAssistant(assistantAccum)
+              } else if (ev === 'tool') {
+                assistantAccum += `\n\n> ${data.name}`
+                pushAssistant(assistantAccum)
+              } else if (ev === 'done') {
+                assistantAccum = data.summary || assistantAccum
+                pushAssistant(assistantAccum)
+              } else if (ev === 'error') {
+                assistantAccum += `\n\nError: ${data.error}`
+                pushAssistant(assistantAccum)
+              }
+            } catch {}
+          }
+        }
+        // finalize last assistant message
+        setMessages(prev => prev.map(m => m.isGenerating ? { ...m, isGenerating: false } : m))
+        responseContent = assistantAccum || 'Agent finished.'
       } else {
-        // Fallback to mock response
         responseContent = generateMockResponse(text)
         if (text.toLowerCase().includes("code") || text.toLowerCase().includes("component")) {
           codeBlocks = [mockCodeBlock]
@@ -149,7 +172,7 @@ export function ChatInterface({ projectId, sandboxId }: ChatInterfaceProps) {
       setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
       console.error('Failed to execute command:', error)
-      
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: "assistant",
