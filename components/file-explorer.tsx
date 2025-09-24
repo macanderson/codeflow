@@ -880,16 +880,27 @@ function findFileById(files: FileItem[], fileId: string | null): FileItem | null
 // Helper functions for E2B integration
 function convertToFileTree(e2bFiles: any[]): FileItem[] {
   return e2bFiles.map((file, index) => ({
-    id: `${file.name}_${index}`,
-    name: file.name,
-    path: file.name,
-    type: file.type === 'directory' ? 'folder' : 'file',
+    id: `${file.path || file.name}_${index}`,
+    name: file.name || file.path?.split('/').pop() || '',
+    path: file.path || file.name,
+    type: (file.type || file.kind) === 'directory' ? 'folder' : 'file',
     content: file.type === 'file' ? '' : undefined,
     language: getLanguageFromExtension(file.name),
     lastModified: new Date(),
     children: file.type === 'directory' ? [] : undefined,
     isOpen: false,
   }))
+}
+
+// Normalize various possible E2B file listing shapes to a common shape
+function normalizeE2BFileList(files: any[]): { name: string; path: string; type: 'file' | 'directory' }[] {
+  if (!Array.isArray(files)) return []
+  return files.map((f: any) => {
+    const name = f.name || f.path?.split('/')?.pop() || ''
+    const path = f.path || name
+    const t = f.type || f.kind || (f.isDir ? 'directory' : 'file')
+    return { name, path, type: t }
+  })
 }
 
 function getLanguageFromExtension(filename: string): string {
