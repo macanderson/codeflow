@@ -83,13 +83,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
         <main className="flex-1 flex overflow-hidden">
           {activeView === "chat" && (
-            <div className="flex-1 flex">
-              <ChatInterface projectId={projectId} sandboxId={sandboxId || undefined} />
-              <CodeProjectDisplay
-                projectId={projectId}
-                sandboxId={sandboxId || undefined}
-                projectName={project?.name}
-              />
+            <div className="flex-1 grid grid-cols-3">
+              <div className="col-span-2 min-w-0 border-r border-border">
+                <ChatInterface projectId={projectId} sandboxId={sandboxId || undefined} />
+              </div>
+              <div className="col-span-1 min-w-0">
+                <FileExplorer projectId={projectId} sandboxId={sandboxId || undefined} />
+              </div>
             </div>
           )}
 
