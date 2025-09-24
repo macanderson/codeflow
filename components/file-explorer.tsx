@@ -37,6 +37,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+const READ_ONLY = true
+
 interface FileItem {
   id: string
   name: string
@@ -64,7 +66,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch files from sandbox
+  // Fetch files from sandbox (root)
   useEffect(() => {
     const fetchFiles = async () => {
       if (!sandboxId) {
@@ -79,7 +81,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
         const data = await response.json()
 
         if (data.success) {
-          const normalized = normalizeE2BFileList(data.files)
+          const normalized = normalizeE2BFileList(data.files, "/home/user/workspace")
           const fileTree = convertToFileTree(normalized)
           setFiles(fileTree)
         } else {
@@ -108,7 +110,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: 'read',
-              path: `/home/user/workspace/${file.path}`
+              path: file.path
             })
           })
           const data = await response.json()
@@ -124,8 +126,25 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
     }
   }
 
-  const handleToggleFolder = (folderId: string) => {
+  const handleToggleFolder = async (folderId: string) => {
+    // Toggle open state
     setFiles((prevFiles) => toggleFolderInTree(prevFiles, folderId))
+
+    // Lazy load children when opening
+    const folder = findFileById(files, folderId)
+    if (sandboxId && folder && folder.type === 'folder' && (!folder.children || folder.children.length === 0)) {
+      try {
+        const listPath = folder.path.startsWith('/home/user/workspace') ? folder.path : `/home/user/workspace/${folder.path}`
+        const response = await fetch(`/api/sandbox/${sandboxId}/files?path=${encodeURIComponent(listPath)}`)
+        const data = await response.json()
+        if (data.success) {
+          const children = convertToFileTree(normalizeE2BFileList(data.files, listPath))
+          setFiles((prev) => setFolderChildren(prev, folderId, children))
+        }
+      } catch (err) {
+        console.error('Failed to list folder:', err)
+      }
+    }
   }
 
   const handleCreateItem = async (name: string, type: "file" | "folder", language?: string, content?: string) => {
@@ -240,7 +259,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
       const response = await fetch(`/api/sandbox/${sandboxId}/files?path=/home/user/workspace`)
       const data = await response.json()
       if (data.success) {
-        setFiles(convertToFileTree(data.files))
+        setFiles(convertToFileTree(normalizeE2BFileList(data.files, "/home/user/workspace")))
       }
     } catch (err) {
       console.error('Failed to rename item:', err)
@@ -297,7 +316,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
       const response = await fetch(`/api/sandbox/${sandboxId}/files?path=/home/user/workspace`)
       const data = await response.json()
       if (data.success) {
-        setFiles(convertToFileTree(data.files))
+        setFiles(convertToFileTree(normalizeE2BFileList(data.files, "/home/user/workspace")))
       }
     } catch (err) {
       console.error('Failed to duplicate item:', err)
@@ -402,31 +421,15 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
         </ScrollArea>
       </div>
 
-      {/* File Content Area */}
+      {/* File Content Area (read-only) */}
       <div className="flex-1">
         {selectedFileData ? (
           <FileEditor
             file={selectedFileData}
             sandboxId={sandboxId}
             onSave={async (content) => {
-              if (sandboxId) {
-                try {
-                  await fetch(`/api/sandbox/${sandboxId}/files`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'write',
-                      path: `/home/user/workspace/${selectedFileData.path}`,
-                      content
-                    })
-                  })
-                  console.log("File saved successfully")
-                } catch (err) {
-                  console.error('Failed to save file:', err)
-                }
-              } else {
-                console.log("Saving:", content)
-              }
+              // Read-only UI: no-op, agent handles writes
+              console.log('Read-only preview. Save is disabled.')
             }}
           />
         ) : (
@@ -566,6 +569,7 @@ function FileTreeItem({
           )}
         </div>
 
+        {!READ_ONLY && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -595,6 +599,7 @@ function FileTreeItem({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
 
       {file.type === "folder" && file.isOpen && file.children && (
@@ -761,8 +766,8 @@ function FileEditor({ file, onSave }: FileEditorProps) {
   }
 
   const handleSave = () => {
-    onSave(content)
-    setHasChanges(false)
+    // Read-only: prevent saving
+    console.log('Read-only preview. Save prevented.')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -784,8 +789,8 @@ function FileEditor({ file, onSave }: FileEditorProps) {
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Last modified: {file.lastModified.toLocaleDateString()}</span>
-          <Button size="sm" onClick={handleSave} disabled={!hasChanges}>
-            Save
+          <Button size="sm" variant="outline" disabled>
+            Read-only
           </Button>
         </div>
       </div>
@@ -794,10 +799,11 @@ function FileEditor({ file, onSave }: FileEditorProps) {
       <div className="flex-1 p-4">
         <Textarea
           value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="w-full h-full font-mono text-sm resize-none border-0 focus-visible:ring-0"
-          placeholder="Start typing..."
+          onChange={() => {}}
+          onKeyDown={() => {}}
+          readOnly
+          className="w-full h-full font-mono text-sm resize-none border-0 focus-visible:ring-0 bg-transparent"
+          placeholder="File preview"
         />
       </div>
 
@@ -884,20 +890,20 @@ function convertToFileTree(e2bFiles: any[]): FileItem[] {
     name: file.name || file.path?.split('/').pop() || '',
     path: file.path || file.name,
     type: (file.type || file.kind) === 'directory' ? 'folder' : 'file',
-    content: file.type === 'file' ? '' : undefined,
-    language: getLanguageFromExtension(file.name),
+    content: (file.type || file.kind) === 'file' ? '' : undefined,
+    language: getLanguageFromExtension(file.name || file.path || ''),
     lastModified: new Date(),
-    children: file.type === 'directory' ? [] : undefined,
+    children: (file.type || file.kind) === 'directory' ? [] : undefined,
     isOpen: false,
   }))
 }
 
 // Normalize various possible E2B file listing shapes to a common shape
-function normalizeE2BFileList(files: any[]): { name: string; path: string; type: 'file' | 'directory' }[] {
+function normalizeE2BFileList(files: any[], basePath?: string): { name: string; path: string; type: 'file' | 'directory' }[] {
   if (!Array.isArray(files)) return []
   return files.map((f: any) => {
     const name = f.name || f.path?.split('/')?.pop() || ''
-    const path = f.path || name
+    const path = f.path || (basePath ? `${basePath}/${name}` : name)
     const t = f.type || f.kind || (f.isDir ? 'directory' : 'file')
     return { name, path, type: t }
   })
@@ -936,6 +942,18 @@ function updateFileContent(files: FileItem[], fileId: string, content: string): 
     }
     if (file.children) {
       return { ...file, children: updateFileContent(file.children, fileId, content) }
+    }
+    return file
+  })
+}
+
+function setFolderChildren(files: FileItem[], folderId: string, children: FileItem[]): FileItem[] {
+  return files.map(file => {
+    if (file.id === folderId && file.type === 'folder') {
+      return { ...file, children }
+    }
+    if (file.children) {
+      return { ...file, children: setFolderChildren(file.children, folderId, children) }
     }
     return file
   })

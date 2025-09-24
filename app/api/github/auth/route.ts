@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange code for access token
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/github/callback`
+    const redirectUri = process.env.GITHUB_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/github/callback`
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
 
     if (action === 'get_auth_url') {
       const clientId = process.env.GITHUB_CLIENT_ID
-      // Always redirect to the callback page so the UI can handle storage/redirects
-      const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/github/callback`
+      // Redirect URI must EXACTLY match your GitHub OAuth app configuration
+      const redirectUri = process.env.GITHUB_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/github/callback`
       const state = Math.random().toString(36).substring(7)
 
       const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo&state=${state}`

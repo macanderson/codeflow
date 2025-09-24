@@ -15,10 +15,7 @@ type SandboxWrapper = {
   }
 }
 
-export async function createSandbox(): Promise<SandboxWrapper> {
-  const sbx = await Sandbox.create('codeflow-agent', {
-    apiKey: process.env.E2B_API_KEY,
-  })
+async function wrapSandbox(sbx: any): Promise<SandboxWrapper> {
 
   // Ensure workspace directory exists
   await sbx.runCode(`
@@ -91,6 +88,18 @@ sys.exit(res.returncode)
   }
 
   return wrapper
+}
+
+export async function createSandbox(): Promise<SandboxWrapper> {
+  const sbx = await Sandbox.create('codeflow-agent', {
+    apiKey: process.env.E2B_API_KEY,
+  })
+  return await wrapSandbox(sbx)
+}
+
+export async function connectSandbox(sessionId: string): Promise<SandboxWrapper> {
+  const sbx = await Sandbox.connect(sessionId, { apiKey: process.env.E2B_API_KEY })
+  return await wrapSandbox(sbx)
 }
 
 export async function runCmd(sbx: SandboxWrapper, cmd: string, cwd?: string) {

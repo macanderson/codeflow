@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.E2B_API_KEY,
     })
 
-    const sessionId = sbx.id
+    const sessionId = (sbx as any).sandboxId || (sbx as any).id
     console.log("[GitHub Clone] E2B sandbox created:", sessionId)
 
     // Choose correct clone URL (use token for private repos)
@@ -74,7 +74,7 @@ import json
 result = subprocess.run([
     'git', 'clone',
     '--branch', '${branch}',
-    '${'"' + '${cloneUrl}'.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'}',
+    ${JSON.stringify(cloneUrl)},
     'workspace'
 ], capture_output=True, text=True, cwd='/home/user')
 

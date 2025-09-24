@@ -45,9 +45,46 @@ pnpm install
 
 ### 3. Set up environment variables
 
+Create a `.env` file in the root directory with the following variables:
+
 ```bash
-cp .env.example .env
+# OpenAI API Key (required for LLM functionality)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# E2B API Key (required for sandbox functionality)
+E2B_API_KEY=your_e2b_api_key_here
+
+# Optional: GitHub integration
+GITHUB_PAT=your_github_personal_access_token
+GITHUB_CLIENT_ID=your_github_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
+GITHUB_REDIRECT_URI=http://localhost:3000/api/github/auth
+
+# Optional: Cursor API integration
+CURSOR_API_KEY=your_cursor_api_key
+
+# Application URL
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
+
+#### Getting API Keys
+
+**OpenAI API Key:**
+1. Go to [OpenAI Platform](https://platform.openai.com/)
+2. Sign in or create an account
+3. Navigate to the [API Keys section](https://platform.openai.com/api-keys)
+4. Click "Create new secret key"
+5. Give your key a name (e.g., "Codeflow Development")
+6. Copy the generated key and add it to your `.env` file as `OPENAI_API_KEY`
+
+**E2B API Key:**
+1. Go to [e2b.dev](https://e2b.dev/)
+2. Sign up or sign in to your account
+3. Navigate to your [dashboard](https://e2b.dev/dashboard)
+4. Go to the "API Keys" section
+5. Click "Create API Key"
+6. Give your key a name (e.g., "Codeflow Development")
+7. Copy the generated key and add it to your `.env` file as `E2B_API_KEY`
 
 ### 4. Run the application
 

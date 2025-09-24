@@ -8,11 +8,15 @@ export async function POST(request: NextRequest, { params }: { params: { session
     console.log("[E2B] Stopping sandbox:", sessionId)
 
     // Connect to existing E2B sandbox and close it
-    const sbx = await Sandbox.connect(sessionId, {
-      apiKey: process.env.E2B_API_KEY,
-    })
-
-    await sbx.kill()
+    try {
+      const sbx = await Sandbox.connect(sessionId, {
+        apiKey: process.env.E2B_API_KEY,
+      })
+      await sbx.kill()
+    } catch (e) {
+      // If sandbox is already gone/paused-not-found, treat as stopped
+      console.warn('[E2B] Stop ignored:', e)
+    }
 
     return NextResponse.json({
       success: true,

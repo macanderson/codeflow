@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { getLLM } from "./llm/provider";
-import { createSandbox, runCmd, readFile, writeFile, installPkgs } from "./tools/e2b";
+import { createSandbox, connectSandbox, runCmd, readFile, writeFile, installPkgs } from "./tools/e2b";
 import { gitClone } from "./tools/git";
 import { fastApply } from "./tools/fastApply";
 
@@ -12,19 +12,27 @@ export type ToolEvent =
   | { type: "error"; error: string };
 
 export async function runAgent(params: {
-  repoUrl: string;
+  repoUrl?: string;
+  sandboxId?: string;
   task: string;
   model: string;
   emitter: EventEmitter;
 }) {
-  const { repoUrl, task, model, emitter } = params;
+  const { repoUrl, sandboxId, task, model, emitter } = params;
   const llm = getLLM(model);
 
-  emitter.emit("event", { type: "log", content: "Creating sandbox..." });
-  const sbx = await createSandbox();
-
-  emitter.emit("event", { type: "tool", name: "git.clone", input: { repoUrl } });
-  await gitClone(sbx, repoUrl);
+  let sbx: any;
+  if (sandboxId) {
+    emitter.emit("event", { type: "log", content: `Connecting to sandbox ${sandboxId}...` });
+    sbx = await connectSandbox(sandboxId);
+  } else {
+    emitter.emit("event", { type: "log", content: "Creating sandbox..." });
+    sbx = await createSandbox();
+    if (repoUrl) {
+      emitter.emit("event", { type: "tool", name: "git.clone", input: { repoUrl } });
+      await gitClone(sbx, repoUrl);
+    }
+  }
 
   const system = `You are an autonomous coding agent operating in a secure sandbox.
 Your repository is located at /home/user/workspace.
@@ -61,7 +69,10 @@ Output compact, executable steps. Prefer small, testable iterations.`;
       else if (name === "fs.read") out = await readFile(sbx, args.path);
       else if (name === "fs.write") { await writeFile(sbx, args.path, args.content); out = "OK"; }
       else if (name === "pkg.install") out = await installPkgs(sbx, args.pkgs);
-      else if (name === "edit.fastApply") out = await fastApply(sbx, args.path, args.patch);
+      else if (name === "edit.fastApply") {
+        const target = args.path.startsWith("/home/user/") ? args.path : `/home/user/workspace/${args.path}`;
+        out = await fastApply(sbx, target, args.patch);
+      }
       else out = `Unknown tool: ${name}`;
 
       emitter.emit("event", { type: "tool", name, input: args, output: (out ?? "").toString().slice(0, 2000) });

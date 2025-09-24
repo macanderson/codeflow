@@ -14,6 +14,10 @@ export async function GET(request: NextRequest, { params }: { params: { sessionI
       apiKey: process.env.E2B_API_KEY,
     })
 
+    // Ensure workspace exists; create if missing (first-time clones)
+    try {
+      await sbx.files.makeDir('/home/user/workspace')
+    } catch {}
     const files = await sbx.files.list(path)
 
     return NextResponse.json({
@@ -47,27 +51,42 @@ export async function POST(request: NextRequest, { params }: { params: { session
 
     switch (action) {
       case 'read':
-        const fileContent = await sbx.files.read(path)
+        // Normalize path: allow absolute and workspace-relative
+        const readPath = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+        const fileContent = await sbx.files.read(readPath)
         result = { content: fileContent }
         break
 
       case 'write':
-        await sbx.files.write(path, content)
+        {
+          const writePath = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+          await sbx.files.write(writePath, content)
+        }
         result = { message: "File written successfully" }
         break
 
       case 'delete':
-        await sbx.files.remove(path)
+        {
+          const delPath = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+          await sbx.files.remove(delPath)
+        }
         result = { message: "File deleted successfully" }
         break
 
       case 'move':
-        await sbx.files.rename(path, newPath)
+        {
+          const from = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+          const to = newPath?.startsWith('/home/user/') ? newPath : `/home/user/workspace/${newPath}`
+          await sbx.files.rename(from, to)
+        }
         result = { message: "File moved successfully" }
         break
 
       case 'create_directory':
-        await sbx.files.makeDir(path)
+        {
+          const dir = path.startsWith('/home/user/') ? path : `/home/user/workspace/${path}`
+          await sbx.files.makeDir(dir)
+        }
         result = { message: "Directory created successfully" }
         break
 
