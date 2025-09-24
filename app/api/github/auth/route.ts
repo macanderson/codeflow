@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
 
     const tokenData = await tokenResponse.json()
 
-    if (tokenData.error) {
-      return NextResponse.json({ error: tokenData.error_description }, { status: 400 })
+    if (!tokenResponse.ok || tokenData.error) {
+      return NextResponse.json({ error: tokenData.error_description || tokenData.error || 'Token exchange failed' }, { status: 400 })
     }
 
     // Get user info from GitHub

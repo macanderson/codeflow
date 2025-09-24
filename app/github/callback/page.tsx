@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, useRef, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,8 +11,11 @@ function GitHubCallbackContent() {
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [error, setError] = useState<string>('')
+  const hasHandled = useRef(false)
 
   useEffect(() => {
+    if (hasHandled.current) return
+    hasHandled.current = true
     const handleCallback = async () => {
       const code = searchParams.get('code')
       const state = searchParams.get('state')
