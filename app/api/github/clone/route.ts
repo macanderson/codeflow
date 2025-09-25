@@ -267,6 +267,7 @@ else:
 
     // Get initial file listing
     const fileListing = await sbx.files.list("/home/user/workspace")
+    console.log("[GitHub Clone] Initial file listing:", fileListing)
 
     // Create project record
     const projectId = `project_${Date.now()}_${Math.random().toString(36).substring(7)}`

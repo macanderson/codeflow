@@ -95,6 +95,26 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [bookmarks, setBookmarks] = useState<{ path: string; name: string; type: "file" | "folder" }[]>([])
+  const [sidebarWidth, setSidebarWidth] = useState<number>(320)
+  const [isResizing, setIsResizing] = useState<boolean>(false)
+
+  // Handle sidebar resizing via mouse drag
+  useEffect(() => {
+    if (!isResizing) return
+    const handleMouseMove = (e: MouseEvent) => {
+      const min = 220
+      const max = 800
+      const next = Math.min(Math.max(e.clientX, min), max)
+      setSidebarWidth(next)
+    }
+    const handleMouseUp = () => setIsResizing(false)
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isResizing])
 
   // Fetch files from sandbox (root)
   useEffect(() => {
@@ -461,9 +481,12 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full select-none">
       {/* File Tree Sidebar */}
-      <div className="w-80 border-r border-border bg-card flex flex-col overflow-hidden">
+      <div
+        className="border-r border-border bg-card flex flex-col overflow-hidden"
+        style={{ width: sidebarWidth }}
+      >
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium">Files</h3>
@@ -502,7 +525,7 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-2">
+          <div className="p-2 whitespace-nowrap">
             <FileTree
               files={filteredFiles}
               onFileSelect={handleFileSelect}
@@ -517,6 +540,14 @@ export function FileExplorer({ projectId, sandboxId }: FileExplorerProps) {
           </div>
         </ScrollArea>
       </div>
+
+      {/* Resize handle */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onMouseDown={() => setIsResizing(true)}
+        className="w-[3px] cursor-col-resize bg-border hover:bg-primary/40 active:bg-primary/60"
+      />
 
       {/* File Content Area (read-only) */}
       <div className="flex-1">
@@ -644,7 +675,7 @@ function FileTreeItem({
     <div>
       <div
         className={cn(
-          "group flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-muted/50 transition-colors",
+          "group flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-muted/50 transition-colors whitespace-nowrap",
           selectedFile === file.id && file.type === "file" && "bg-primary/10 text-primary",
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
@@ -937,7 +968,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
                         language={match?.[1] || 'text'}
                         style={prismOneDarkNoShadow}
                         customStyle={{ margin: 0, borderRadius: 6, fontSize: '0.875rem' }}
-                        wrapLongLines
+                        wrapLongLines={false}
                         {...props}
                       >
                         {content.replace(/\n$/, '')}
@@ -971,7 +1002,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
             }}
             codeTagProps={{ style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' } }}
             showLineNumbers
-            wrapLongLines
+            wrapLongLines={false}
           >
             {content ?? ''}
           </SyntaxHighlighter>
@@ -1086,17 +1117,21 @@ function expandFoldersForPath(files: FileItem[], path: string): FileItem[] {
 
 // Helper functions for E2B integration
 function convertToFileTree(e2bFiles: any[]): FileItem[] {
-  return e2bFiles.map((file, index) => ({
-    id: `${file.path || file.name}_${index}`,
-    name: file.name || file.path?.split('/').pop() || '',
-    path: file.path || file.name,
-    type: (file.type || file.kind) === 'directory' ? 'folder' : 'file',
-    content: (file.type || file.kind) === 'file' ? '' : undefined,
-    language: getLanguageFromExtension(file.name || file.path || ''),
-    lastModified: new Date(),
-    children: (file.type || file.kind) === 'directory' ? [] : undefined,
-    isOpen: false,
-  }))
+  return e2bFiles.map((file, index) => {
+    const rawType = (file.type || file.kind || file.entryType || '').toString().toLowerCase()
+    const isDir = rawType === 'directory' || rawType === 'dir' || rawType === 'folder' || file.isDir === true || file.isDirectory === true || (typeof file.mode === 'string' && file.mode.startsWith('d')) || (typeof file.path === 'string' && file.path.endsWith('/'))
+    return {
+      id: `${file.path || file.name}_${index}`,
+      name: file.name || file.path?.split('/').pop() || '',
+      path: file.path || file.name,
+      type: isDir ? 'folder' : 'file',
+      content: isDir ? undefined : '',
+      language: getLanguageFromExtension(file.name || file.path || ''),
+      lastModified: new Date(),
+      children: isDir ? [] : undefined,
+      isOpen: false,
+    }
+  })
 }
 
 // Normalize various possible E2B file listing shapes to a common shape
@@ -1105,8 +1140,22 @@ function normalizeE2BFileList(files: any[], basePath?: string): { name: string; 
   return files.map((f: any) => {
     const name = f.name || f.path?.split('/')?.pop() || ''
     const path = f.path || (basePath ? `${basePath}/${name}` : name)
-    const t = f.type || f.kind || (f.isDir ? 'directory' : 'file')
-    return { name, path, type: t }
+
+    const rawType: unknown = f.type ?? f.kind ?? f.entryType
+    let typeNormalized: 'file' | 'directory' = 'file'
+    if (typeof rawType === 'string') {
+      const t = rawType.toLowerCase()
+      if (t === 'directory' || t === 'dir' || t === 'folder') typeNormalized = 'directory'
+    } else if (typeof f.isDir === 'boolean') {
+      typeNormalized = f.isDir ? 'directory' : 'file'
+    } else if (typeof f.isDirectory === 'boolean') {
+      typeNormalized = f.isDirectory ? 'directory' : 'file'
+    } else if (typeof f.mode === 'string' && f.mode.startsWith('d')) {
+      typeNormalized = 'directory'
+    } else if (typeof path === 'string' && path.endsWith('/')) {
+      typeNormalized = 'directory'
+    }
+    return { name, path, type: typeNormalized }
   })
 }
 
