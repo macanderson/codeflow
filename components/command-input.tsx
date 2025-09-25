@@ -198,13 +198,13 @@ const CommandInput = forwardRef<HTMLTextAreaElement, CommandInputProps>(
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault()
-          setSelectedIndex((prev) =>
+          setSelectedIndex((prev: number) =>
             prev < filteredCommands.length - 1 ? prev + 1 : 0
           )
           break
         case "ArrowUp":
           e.preventDefault()
-          setSelectedIndex((prev) =>
+          setSelectedIndex((prev: number) =>
             prev > 0 ? prev - 1 : filteredCommands.length - 1
           )
           break
@@ -259,7 +259,7 @@ const CommandInput = forwardRef<HTMLTextAreaElement, CommandInputProps>(
       const segments: React.ReactNode[] = []
       let lastEnd = 0
 
-      pills.forEach((pill, index) => {
+      pills.forEach((pill: CommandPill, index: number) => {
         // Add text before pill
         if (pill.start > lastEnd) {
           segments.push(

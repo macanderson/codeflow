@@ -1,5 +1,6 @@
 {
-  "name": "my-v0-project",
+  "name": "codeflow",
+  "description": "Codeflow is an autonomous coding agent running on top of the E2B Sandbox that can be used to automate tasks on any repository.",
   "version": "0.1.0",
   "private": true,
   "scripts": {

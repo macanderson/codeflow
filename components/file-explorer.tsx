@@ -44,19 +44,40 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeSanitize from "rehype-sanitize"
 
+// Types
+type UnknownRecord = Record<string, unknown>
+
+interface E2BListEntry {
+  name?: string
+  path?: string
+  type?: string
+  kind?: string
+  entryType?: string
+  isDir?: boolean
+  isDirectory?: boolean
+  mode?: string
+}
+
+interface NormalizedE2BEntry {
+  name: string
+  path: string
+  type: "file" | "directory"
+}
+
 // Remove any inline textShadow styles from the Prism theme (which render as inline styles)
-function stripTextShadowDeep(input: any): any {
+function stripTextShadowDeep(input: unknown): unknown {
   if (Array.isArray(input)) {
     return input.map(stripTextShadowDeep)
   }
   if (input && typeof input === "object") {
-    const next: any = {}
-    for (const key in input) {
-      if (Object.prototype.hasOwnProperty.call(input, key)) {
+    const next: UnknownRecord = {}
+    const source = input as UnknownRecord
+    for (const key in source) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
         if (key === "textShadow") {
           continue
         }
-        next[key] = stripTextShadowDeep((input as any)[key])
+        next[key] = stripTextShadowDeep(source[key])
       }
     }
     return next
@@ -64,7 +85,7 @@ function stripTextShadowDeep(input: any): any {
   return input
 }
 
-const prismOneDarkNoShadow = stripTextShadowDeep((prismThemes as any).oneDark)
+const prismOneDarkNoShadow = stripTextShadowDeep((prismThemes as unknown as { oneDark: UnknownRecord }).oneDark) as UnknownRecord
 
 const READ_ONLY = true
 
@@ -1116,17 +1137,19 @@ function expandFoldersForPath(files: FileItem[], path: string): FileItem[] {
 }
 
 // Helper functions for E2B integration
-function convertToFileTree(e2bFiles: any[]): FileItem[] {
+function convertToFileTree(e2bFiles: E2BListEntry[]): FileItem[] {
   return e2bFiles.map((file, index) => {
     const rawType = (file.type || file.kind || file.entryType || '').toString().toLowerCase()
     const isDir = rawType === 'directory' || rawType === 'dir' || rawType === 'folder' || file.isDir === true || file.isDirectory === true || (typeof file.mode === 'string' && file.mode.startsWith('d')) || (typeof file.path === 'string' && file.path.endsWith('/'))
+    const safeName = file.name || file.path?.split('/')?.pop() || ''
+    const safePath = (file.path || file.name || safeName) as string
     return {
-      id: `${file.path || file.name}_${index}`,
-      name: file.name || file.path?.split('/').pop() || '',
-      path: file.path || file.name,
+      id: `${safePath}_${index}`,
+      name: safeName,
+      path: safePath,
       type: isDir ? 'folder' : 'file',
       content: isDir ? undefined : '',
-      language: getLanguageFromExtension(file.name || file.path || ''),
+      language: getLanguageFromExtension(safeName || safePath || ''),
       lastModified: new Date(),
       children: isDir ? [] : undefined,
       isOpen: false,
@@ -1135,9 +1158,9 @@ function convertToFileTree(e2bFiles: any[]): FileItem[] {
 }
 
 // Normalize various possible E2B file listing shapes to a common shape
-function normalizeE2BFileList(files: any[], basePath?: string): { name: string; path: string; type: 'file' | 'directory' }[] {
+function normalizeE2BFileList(files: E2BListEntry[], basePath?: string): NormalizedE2BEntry[] {
   if (!Array.isArray(files)) return []
-  return files.map((f: any) => {
+  return files.map((f: E2BListEntry) => {
     const name = f.name || f.path?.split('/')?.pop() || ''
     const path = f.path || (basePath ? `${basePath}/${name}` : name)
 
