@@ -54,7 +54,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 # E2B API Key (required for sandbox functionality)
 E2B_API_KEY=your_e2b_api_key_here
 
-# Optional: GitHub integration
+# GitHub integration (required for repository import)
 GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
 GITHUB_REDIRECT_URI=http://localhost:3000/api/github/auth

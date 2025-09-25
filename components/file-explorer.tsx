@@ -44,6 +44,28 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeSanitize from "rehype-sanitize"
 
+// Remove any inline textShadow styles from the Prism theme (which render as inline styles)
+function stripTextShadowDeep(input: any): any {
+  if (Array.isArray(input)) {
+    return input.map(stripTextShadowDeep)
+  }
+  if (input && typeof input === "object") {
+    const next: any = {}
+    for (const key in input) {
+      if (Object.prototype.hasOwnProperty.call(input, key)) {
+        if (key === "textShadow") {
+          continue
+        }
+        next[key] = stripTextShadowDeep((input as any)[key])
+      }
+    }
+    return next
+  }
+  return input
+}
+
+const prismOneDarkNoShadow = stripTextShadowDeep((prismThemes as any).oneDark)
+
 const READ_ONLY = true
 
 interface FileItem {
@@ -899,7 +921,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
       </div>
 
       {/* Read-only Preview with syntax highlighting / markdown rendering */}
-      <div className="flex-1 p-0 overflow-auto">
+      <div className="flex-1 p-0 overflow-auto no-text-shadow">
         {file.language === 'markdown' ? (
           <div className="prose prose-invert max-w-none px-4 py-3">
             <ReactMarkdown
@@ -913,7 +935,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
                     return (
                       <SyntaxHighlighter
                         language={match?.[1] || 'text'}
-                        style={(prismThemes as any).oneDark}
+                        style={prismOneDarkNoShadow}
                         customStyle={{ margin: 0, borderRadius: 6, fontSize: '0.875rem' }}
                         wrapLongLines
                         {...props}
@@ -939,7 +961,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
         ) : (
           <SyntaxHighlighter
             language={file.language || 'text'}
-            style={(prismThemes as any).oneDark}
+            style={prismOneDarkNoShadow}
             customStyle={{
               margin: 0,
               borderRadius: 0,

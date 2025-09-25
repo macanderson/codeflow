@@ -58,6 +58,7 @@ interface Message {
   codeChanges?: CodeChange[]
   editStatus?: "pending" | "applying" | "success" | "failed"
   editResult?: { applied: number; failed: number; errors?: string[] }
+  terminalOutput?: string
 }
 
 interface Attachment {
@@ -197,19 +198,20 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
         let buffer = ''
         let reasoningAccum = ''
         let summaryContent = ''
+        let outputAccum = ''
         const changedPaths: string[] = []
-        const pushAssistant = (content: string, reasoning?: string) => {
+        const pushAssistant = (content: string, reasoning?: string, terminalOutput?: string) => {
           setMessages(prev => {
             const last = prev[prev.length - 1]
             if (last && last.isGenerating) {
               const updated = [...prev]
-              updated[updated.length - 1] = { ...last, content, reasoning }
+              updated[updated.length - 1] = { ...last, content, reasoning, terminalOutput }
               return updated
             }
-            return [...prev, { id: (Date.now()+2).toString(), type:'assistant', content, reasoning, timestamp: new Date(), isGenerating: true }]
+            return [...prev, { id: (Date.now()+2).toString(), type:'assistant', content, reasoning, terminalOutput, timestamp: new Date(), isGenerating: true }]
           })
         }
-        pushAssistant('', '')
+        pushAssistant('', '', '')
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -225,7 +227,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
               const data = JSON.parse(dataLine)
               if (ev === 'plan' || ev === 'log') {
                 reasoningAccum += (reasoningAccum ? '\n' : '') + (data.content || '')
-                pushAssistant(summaryContent, reasoningAccum)
+                pushAssistant(summaryContent, reasoningAccum, outputAccum)
               } else if (ev === 'tool') {
                 reasoningAccum += `\n\n> ${data.name}`
                 try {
@@ -235,11 +237,18 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                   if (data.name === 'edit.fastApply' && data.input?.path) {
                     changedPaths.push(data.input.path)
                   }
+                  // Capture tool stdout/stderr into terminal output
+                  if (data.output) {
+                    const out = String(data.output || '').trim()
+                    if (out) {
+                      outputAccum += (outputAccum ? "\n" : "") + out
+                    }
+                  }
                 } catch {}
-                pushAssistant(summaryContent, reasoningAccum)
+                pushAssistant(summaryContent, reasoningAccum, outputAccum)
               } else if (ev === 'done') {
                 summaryContent = data.summary || summaryContent
-                pushAssistant(summaryContent, reasoningAccum)
+                pushAssistant(summaryContent, reasoningAccum, outputAccum)
                 try {
                   if (changedPaths.length > 0) {
                     window.dispatchEvent(new CustomEvent('sandbox-files-changed', {
@@ -249,7 +258,7 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
                 } catch {}
               } else if (ev === 'error') {
                 reasoningAccum += `\n\nError: ${data.error}`
-                pushAssistant(summaryContent || 'An error occurred.', reasoningAccum)
+                pushAssistant(summaryContent || 'An error occurred.', reasoningAccum, outputAccum)
               }
             } catch {}
           }
@@ -333,6 +342,32 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
               } catch {}
             }
           }
+        }
+
+        // If the agent did not actually execute a tool and there is no output, but
+        // the user input looks like a shell command, run it directly as a fallback
+        if (!outputAccum && looksLikeShellCommand(text)) {
+          try {
+            const execResp = await fetch(`/api/sandbox/${sandboxId}/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: text, language: 'bash', cwd: '/home/user/workspace' })
+            })
+            const execJson = await execResp.json()
+            const outText = String(execJson?.output || '').trim()
+            if (outText) {
+              setMessages(prev => {
+                const updated = [...prev]
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].type === 'assistant') {
+                    updated[i] = { ...updated[i], terminalOutput: outText }
+                    break
+                  }
+                }
+                return updated
+              })
+            }
+          } catch {}
         }
       } else {
         responseContent = generateMockResponse(text)
@@ -691,6 +726,7 @@ interface ChatMessageProps {
 function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
   const isUser = message.type === "user"
   const [showReasoning, setShowReasoning] = useState(false)
+  const [showTerminal, setShowTerminal] = useState(true)
 
   return (
     <div className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
@@ -794,6 +830,27 @@ function ChatMessage({ message, onCopy, onRegenerate }: ChatMessageProps) {
                   <pre className="whitespace-pre-wrap break-words">{message.reasoning}</pre>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Terminal Output (collapsible, expanded by default) */}
+          {!isUser && !!message.terminalOutput && (
+            <div className="mt-3">
+              <div className="border border-border rounded-lg">
+                <div className="flex items-center justify-between px-3 py-2 bg-muted/50">
+                  <span className="text-xs font-medium">Terminal Output</span>
+                  <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setShowTerminal((s) => !s)}>
+                    {showTerminal ? 'Hide' : 'Show'}
+                  </Button>
+                </div>
+                {showTerminal && (
+                  <div className="p-3 bg-background">
+                    <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+                      <code>{message.terminalOutput}</code>
+                    </pre>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1026,6 +1083,18 @@ function generateMockResponse(input: string): string {
   ]
 
   return responses[Math.floor(Math.random() * responses.length)]
+}
+
+function looksLikeShellCommand(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  // Heuristics: avoid sentences/questions; prefer typical shell tokens
+  if (/[?]|\.$/.test(t)) return false
+  // Starts with common binaries or builtins or has a pipe/redirect
+  if (/^(ls|cd|cat|echo|grep|find|pwd|node|pnpm|npm|yarn|git|python|pip|uv|bash|sh|chmod|chown|rm|cp|mv|mkdir|rmdir)\b/.test(t)) return true
+  if (/[|&><`;$]/.test(t)) return true
+  // Looks like a bare command with args
+  return /^[a-zA-Z0-9._\-/]+\s+.+$/.test(t)
 }
 
 const mockCodeBlock: CodeBlock = {
