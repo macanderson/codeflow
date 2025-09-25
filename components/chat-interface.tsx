@@ -186,6 +186,47 @@ export function ChatInterface({ projectId, sandboxId, repoUrl, onSandboxRecreate
       let codeBlocks: CodeBlock[] | undefined = undefined
 
       if (sandboxId) {
+        // If explicit @run commands are present, execute them directly and show stdout
+        const runCmds = commands.filter(c => c.type === 'run' && c.command && c.command.trim())
+        if (runCmds.length > 0) {
+          const assistantId = (Date.now() + 1).toString()
+          setMessages(prev => [
+            ...prev,
+            {
+              id: assistantId,
+              type: 'assistant',
+              content: runCmds.length === 1 ? `Running: ${runCmds[0].command}` : `Running ${runCmds.length} commands...`,
+              timestamp: new Date(),
+              isGenerating: true,
+            }
+          ])
+
+          let outAll = ''
+          for (const cmd of runCmds) {
+            try {
+              const execResp = await fetch(`/api/sandbox/${sandboxId}/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd.command, language: 'bash' })
+              })
+              const execJson = await execResp.json()
+              const outText = String(execJson?.output || '').trim()
+              const exitCode = Number(execJson?.exitCode ?? 0)
+              outAll += (outAll ? '\n\n' : '') + `$ ${cmd.command}\n` + (outText || '(no output)') + `\n(exit ${exitCode})`
+            } catch (e) {
+              outAll += (outAll ? '\n\n' : '') + `$ ${cmd.command}\nError executing command.`
+            }
+          }
+
+          setMessages(prev => prev.map(m => m.id === assistantId ? {
+            ...m,
+            isGenerating: false,
+            terminalOutput: outAll,
+            content: 'Command execution finished.'
+          } : m))
+
+          return
+        }
         // Stream events from the agent
         const resp = await fetch('/api/agent/run', {
           method: 'POST',

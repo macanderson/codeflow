@@ -45,6 +45,59 @@ export function ProjectHeader({ project, activeView, onViewChange }: ProjectHead
   const [isRunning, setIsRunning] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
 
+  const downloadProjectZip = async () => {
+    try {
+      const sandboxRaw = typeof window !== 'undefined' ? localStorage.getItem('current_sandbox') : null
+      const sandbox = sandboxRaw ? JSON.parse(sandboxRaw) : null
+      const sandboxId = sandbox?.sessionId
+      if (!sandboxId) {
+        alert('No active sandbox. Open a project first.')
+        return
+      }
+
+      const baseName = (project.name || 'project').toLowerCase().replace(/[\s\-]+/g, '_').replace(/[^a-z0-9_]/g, '')
+      const now = new Date()
+      const pad = (n: number) => n.toString().padStart(2, '0')
+      const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+      const zipFileName = `${baseName}_${ts}.zip`
+
+      const zipResp = await fetch(`/api/sandbox/${sandboxId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `mkdir -p /home/user/exports && cd /home/user/workspace && zip -r /home/user/exports/${zipFileName} .` })
+      })
+      if (!zipResp.ok) {
+        alert('Failed to prepare ZIP in sandbox.')
+        return
+      }
+      const zipJson = await zipResp.json()
+      if (zipJson?.exitCode && zipJson.exitCode !== 0) {
+        alert('ZIP command failed in sandbox.')
+        return
+      }
+
+      const dlResp = await fetch(`/api/sandbox/${sandboxId}/file?path=${encodeURIComponent(`/home/user/exports/${zipFileName}`)}`)
+      if (!dlResp.ok) {
+        alert('Failed to download ZIP from sandbox.')
+        return
+      }
+      const blob = await dlResp.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = zipFileName
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }, 100)
+    } catch (e) {
+      console.error('Download failed:', e)
+      alert('Download failed. See console for details.')
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
@@ -140,7 +193,7 @@ export function ProjectHeader({ project, activeView, onViewChange }: ProjectHead
                 <Share className="h-4 w-4 mr-2" />
                 Share Project
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={downloadProjectZip}>
                 <Download className="h-4 w-4 mr-2" />
                 Export Code
               </DropdownMenuItem>
