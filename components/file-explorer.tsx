@@ -927,6 +927,17 @@ interface FileEditorProps {
   onSave: (content: string) => void
 }
 
+// Helper to determine if a file has an extension
+function hasExtension(filename: string): boolean {
+  // If the filename starts with a dot and has no other dot, it's a hidden file, not an extension
+  // Otherwise, if there's a dot not at the start, it's an extension
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot <= 0) return false;
+  // If the dot is at the end, it's not an extension (e.g. "file.")
+  if (lastDot === filename.length - 1) return false;
+  return true;
+}
+
 function FileEditor({ file, onSave }: FileEditorProps) {
   const [content, setContent] = useState(file.content || "")
   const [hasChanges, setHasChanges] = useState(false)
@@ -954,6 +965,13 @@ function FileEditor({ file, onSave }: FileEditorProps) {
     }
   }
 
+  // Determine the language to use for rendering
+  let renderLanguage = file.language || 'text'
+  // If the file has no extension, always render as plain text
+  if (!hasExtension(file.name)) {
+    renderLanguage = 'text'
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* File Header */}
@@ -974,7 +992,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
 
       {/* Read-only Preview with syntax highlighting / markdown rendering */}
       <div className="flex-1 p-0 overflow-auto no-text-shadow">
-        {file.language === 'markdown' ? (
+        {renderLanguage === 'markdown' ? (
           <div className="prose prose-invert max-w-none px-4 py-3">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -1012,7 +1030,7 @@ function FileEditor({ file, onSave }: FileEditorProps) {
           </div>
         ) : (
           <SyntaxHighlighter
-            language={file.language || 'text'}
+            language={renderLanguage}
             style={prismOneDarkNoShadow}
             customStyle={{
               margin: 0,
@@ -1209,6 +1227,11 @@ function toggleBookmark(file: FileItem) {
 }
 
 function getLanguageFromExtension(filename: string): string {
+  // If the file has no extension, always return 'text'
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === filename.length - 1) {
+    return "text";
+  }
   const ext = filename.split('.').pop()?.toLowerCase()
   const languageMap: { [key: string]: string } = {
     'ts': 'typescript',
